@@ -362,13 +362,46 @@ function App() {
     console.log('🏠 [ROOM] Room Name:', room);
 
     try {
-      console.log('🔌 [WEBRTC] Creating WebrtcProvider...');
+      console.log('🔌 [WEBRTC] Creating WebrtcProvider with custom signaling...');
 
-      // Initialize WebRTC Provider with custom signaling server
+      // Create custom WebSocket factory that passes password as subprotocol
+      // This is required because the Deno signaling server expects password via Sec-WebSocket-Protocol header
+      const createAuthenticatedWebSocket = (url: string) => {
+        console.log(`🔐 [WS] Creating authenticated WebSocket to: ${url}`);
+        console.log(`🔐 [WS] Using password as subprotocol: ${signalingPassword.substring(0, 3)}***`);
+
+        // Pass password as the second parameter (becomes Sec-WebSocket-Protocol header)
+        const ws = new WebSocket(url, signalingPassword);
+
+        ws.addEventListener('open', () => {
+          console.log('✅ [WS] WebSocket opened successfully!');
+        });
+
+        ws.addEventListener('error', (error) => {
+          console.error('❌ [WS] WebSocket error:', error);
+        });
+
+        ws.addEventListener('close', (event) => {
+          console.warn('⚠️ [WS] WebSocket closed:', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean
+          });
+        });
+
+        return ws;
+      };
+
+      // Initialize WebRTC Provider with custom WebSocket factory
       const newProvider = new WebrtcProvider(room, doc, {
-        // Use secure signaling server with password authentication from environment variables
+        // Important: Remove password from here - it's only for P2P encryption, not server auth
+        // password: signalingPassword,  // ❌ This doesn't authenticate with the server!
+
         signaling: [signalingServer],
-        password: signalingPassword,
+
+        // Custom WebSocket connection that includes password authentication
+        WebSocketPolyfill: createAuthenticatedWebSocket as any,
+
         // Add STUN servers to facilitate peer-to-peer connections without a TURN server
         peerOpts: {
           config: {
