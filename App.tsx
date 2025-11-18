@@ -362,61 +362,38 @@ function App() {
     console.log('🏠 [ROOM] Room Name:', room);
 
     try {
-      console.log('🔌 [WEBRTC] Creating WebrtcProvider with custom signaling...');
+      console.log('🔌 [WEBRTC] Creating WebrtcProvider...');
 
-      // Create a custom WebSocket class that always uses password authentication
-      // This is required because the Deno signaling server expects password via Sec-WebSocket-Protocol header
-      class AuthenticatedWebSocket extends WebSocket {
+      // CRITICAL: Monkey-patch window.WebSocket - y-webrtc ignores WebSocketPolyfill!
+      const OriginalWebSocket = window.WebSocket;
+
+      (window as any).WebSocket = class extends OriginalWebSocket {
         constructor(url: string | URL, protocols?: string | string[]) {
-          console.log(`🔐 [WS] Creating authenticated WebSocket to: ${url}`);
-          console.log(`🔐 [WS] Overriding protocols with password: ${signalingPassword.substring(0, 3)}***`);
+          const urlStr = url.toString();
 
-          // ALWAYS use the signaling password as the protocol, ignore any other protocols
-          super(url, signalingPassword);
+          // Only patch OUR signaling server
+          if (urlStr.includes('signaling-server') && urlStr.includes('solar2004.deno.net')) {
+            console.log(`🔐 [WS] Patching connection to: ${urlStr}`);
+            console.log(`🔐 [WS] Using password: ${signalingPassword.substring(0, 3)}***`);
+            super(url, signalingPassword); // FORCE password
 
-          this.addEventListener('open', () => {
-            console.log('✅ [WS] WebSocket opened successfully!');
-            console.log('✅ [WS] Protocol selected:', (this as any).protocol);
-          });
-
-          this.addEventListener('error', (error) => {
-            console.error('❌ [WS] WebSocket error:', error);
-          });
-
-          this.addEventListener('close', (event) => {
-            console.warn('⚠️ [WS] WebSocket closed:', {
-              code: event.code,
-              reason: event.reason,
-              wasClean: event.wasClean
+            this.addEventListener('open', () => {
+              console.log('✅ [WS] CONNECTED with auth! Protocol:', (this as any).protocol);
             });
 
-            // Log specific close codes for debugging
-            if (event.code === 1002) {
-              console.error('❌ [WS] CLOSE CODE 1002: Protocol error (likely authentication failed)');
-            } else if (event.code === 1006) {
-              console.error('❌ [WS] CLOSE CODE 1006: Abnormal closure (connection lost)');
-            } else if (event.code === 1008) {
-              console.error('❌ [WS] CLOSE CODE 1008: Policy violation (auth rejected)');
-            }
-          });
-
-          this.addEventListener('message', (event) => {
-            console.log('📨 [WS] Message received:', event.data.substring(0, 100));
-          });
+            this.addEventListener('close', (e) => {
+              console.warn(`⚠️ [WS] CLOSED: code=${e.code}`);
+            });
+          } else {
+            // Not our server
+            super(url, protocols as any);
+          }
         }
-      }
+      };
 
-      // Initialize WebRTC Provider with custom authenticated WebSocket
+      // Create provider - will use patched WebSocket
       const newProvider = new WebrtcProvider(room, doc, {
-        // DON'T use y-webrtc's password - it's for P2P encryption, not server auth
-        // password: signalingPassword,  // ❌ Wrong! This doesn't authenticate with the server
-
         signaling: [signalingServer],
-
-        // Use our custom WebSocket class that includes authentication
-        WebSocketPolyfill: AuthenticatedWebSocket as any,
-
-        // Add STUN servers to facilitate peer-to-peer connections without a TURN server
         peerOpts: {
           config: {
             iceServers: [
@@ -425,6 +402,12 @@ function App() {
           }
         }
       });
+
+      // Restore after 5s
+      setTimeout(() => {
+        console.log('🔧 [PATCH] Restoring WebSocket');
+        (window as any).WebSocket = OriginalWebSocket;
+      }, 5000);
 
       console.log('✅ [WEBRTC] WebrtcProvider created successfully');
       console.log('📊 [WEBRTC] Provider details:', {
