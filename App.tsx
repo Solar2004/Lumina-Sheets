@@ -364,43 +364,57 @@ function App() {
     try {
       console.log('🔌 [WEBRTC] Creating WebrtcProvider with custom signaling...');
 
-      // Create custom WebSocket factory that passes password as subprotocol
+      // Create a custom WebSocket class that always uses password authentication
       // This is required because the Deno signaling server expects password via Sec-WebSocket-Protocol header
-      const createAuthenticatedWebSocket = (url: string) => {
-        console.log(`🔐 [WS] Creating authenticated WebSocket to: ${url}`);
-        console.log(`🔐 [WS] Using password as subprotocol: ${signalingPassword.substring(0, 3)}***`);
+      class AuthenticatedWebSocket extends WebSocket {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          console.log(`🔐 [WS] Creating authenticated WebSocket to: ${url}`);
+          console.log(`🔐 [WS] Overriding protocols with password: ${signalingPassword.substring(0, 3)}***`);
 
-        // Pass password as the second parameter (becomes Sec-WebSocket-Protocol header)
-        const ws = new WebSocket(url, signalingPassword);
+          // ALWAYS use the signaling password as the protocol, ignore any other protocols
+          super(url, signalingPassword);
 
-        ws.addEventListener('open', () => {
-          console.log('✅ [WS] WebSocket opened successfully!');
-        });
-
-        ws.addEventListener('error', (error) => {
-          console.error('❌ [WS] WebSocket error:', error);
-        });
-
-        ws.addEventListener('close', (event) => {
-          console.warn('⚠️ [WS] WebSocket closed:', {
-            code: event.code,
-            reason: event.reason,
-            wasClean: event.wasClean
+          this.addEventListener('open', () => {
+            console.log('✅ [WS] WebSocket opened successfully!');
+            console.log('✅ [WS] Protocol selected:', (this as any).protocol);
           });
-        });
 
-        return ws;
-      };
+          this.addEventListener('error', (error) => {
+            console.error('❌ [WS] WebSocket error:', error);
+          });
 
-      // Initialize WebRTC Provider with custom WebSocket factory
+          this.addEventListener('close', (event) => {
+            console.warn('⚠️ [WS] WebSocket closed:', {
+              code: event.code,
+              reason: event.reason,
+              wasClean: event.wasClean
+            });
+
+            // Log specific close codes for debugging
+            if (event.code === 1002) {
+              console.error('❌ [WS] CLOSE CODE 1002: Protocol error (likely authentication failed)');
+            } else if (event.code === 1006) {
+              console.error('❌ [WS] CLOSE CODE 1006: Abnormal closure (connection lost)');
+            } else if (event.code === 1008) {
+              console.error('❌ [WS] CLOSE CODE 1008: Policy violation (auth rejected)');
+            }
+          });
+
+          this.addEventListener('message', (event) => {
+            console.log('📨 [WS] Message received:', event.data.substring(0, 100));
+          });
+        }
+      }
+
+      // Initialize WebRTC Provider with custom authenticated WebSocket
       const newProvider = new WebrtcProvider(room, doc, {
-        // Important: Remove password from here - it's only for P2P encryption, not server auth
-        // password: signalingPassword,  // ❌ This doesn't authenticate with the server!
+        // DON'T use y-webrtc's password - it's for P2P encryption, not server auth
+        // password: signalingPassword,  // ❌ Wrong! This doesn't authenticate with the server
 
         signaling: [signalingServer],
 
-        // Custom WebSocket connection that includes password authentication
-        WebSocketPolyfill: createAuthenticatedWebSocket as any,
+        // Use our custom WebSocket class that includes authentication
+        WebSocketPolyfill: AuthenticatedWebSocket as any,
 
         // Add STUN servers to facilitate peer-to-peer connections without a TURN server
         peerOpts: {
