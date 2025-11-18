@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 import { WebrtcProvider } from 'y-webrtc';
-import { 
-  FileSpreadsheet, 
-  MessageSquare, 
-  Download, 
-  Upload, 
-  Send, 
-  Sparkles, 
+import {
+  FileSpreadsheet,
+  MessageSquare,
+  Download,
+  Upload,
+  Send,
+  Sparkles,
   Save,
   X,
   Undo2,
@@ -52,7 +52,7 @@ const getRandomName = () => {
 // Helper to download chart as PNG
 const downloadChartAsPng = (chartId: string, title: string) => {
   const svgElement = document.querySelector(`#${chartId} .recharts-wrapper svg`) as SVGSVGElement;
-  
+
   if (!svgElement) {
     alert("Could not locate chart element.");
     return;
@@ -65,7 +65,7 @@ const downloadChartAsPng = (chartId: string, title: string) => {
   // Create a canvas
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  
+
   // Get dimensions
   const rect = svgElement.getBoundingClientRect();
   canvas.width = rect.width * 2; // 2x for retina/quality
@@ -81,7 +81,7 @@ const downloadChartAsPng = (chartId: string, title: string) => {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.scale(2, 2);
       ctx.drawImage(img, 0, 0);
-      
+
       // Download
       const pngUrl = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
@@ -90,7 +90,7 @@ const downloadChartAsPng = (chartId: string, title: string) => {
       document.body.appendChild(downloadLink);
       downloadLink.click();
       document.body.removeChild(downloadLink);
-      
+
       URL.revokeObjectURL(url);
     }
   };
@@ -124,7 +124,7 @@ const InsightView: React.FC<{ data: InsightData }> = ({ data }) => (
         <p className="text-sm leading-relaxed">{data.summary}</p>
       </div>
     </div>
-    
+
     {/* Key Stats Grid */}
     <div className="space-y-2">
       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Key Metrics</h3>
@@ -137,11 +137,10 @@ const InsightView: React.FC<{ data: InsightData }> = ({ data }) => (
             <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1 font-semibold">{stat.label}</p>
             <div className="flex items-end gap-2">
               <span className="text-2xl font-bold text-white tracking-tight truncate">{stat.value}</span>
-              <div className={`flex items-center text-[10px] font-bold mb-1.5 px-1 py-0.5 rounded ${
-                stat.trend === 'up' ? 'bg-green-500/20 text-green-400' : 
-                stat.trend === 'down' ? 'bg-red-500/20 text-red-400' : 
-                'bg-gray-500/20 text-gray-400'
-              }`}>
+              <div className={`flex items-center text-[10px] font-bold mb-1.5 px-1 py-0.5 rounded ${stat.trend === 'up' ? 'bg-green-500/20 text-green-400' :
+                  stat.trend === 'down' ? 'bg-red-500/20 text-red-400' :
+                    'bg-gray-500/20 text-gray-400'
+                }`}>
                 {stat.trend === 'up' && <TrendingUp size={10} className="mr-1" />}
                 {stat.trend === 'down' && <TrendingDown size={10} className="mr-1" />}
                 {stat.trend?.toUpperCase() || 'NEUTRAL'}
@@ -154,23 +153,23 @@ const InsightView: React.FC<{ data: InsightData }> = ({ data }) => (
 
     {/* Recommendation */}
     <div className="space-y-2">
-       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">AI Recommendation</h3>
-       <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 border border-gray-700">
-          <p className="text-sm text-gray-300 italic border-l-4 border-blue-500 pl-4">{data.recommendation}</p>
-       </div>
+      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">AI Recommendation</h3>
+      <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 border border-gray-700">
+        <p className="text-sm text-gray-300 italic border-l-4 border-blue-500 pl-4">{data.recommendation}</p>
+      </div>
     </div>
   </div>
 );
 
 // Component: Gallery Expanded Modal
-const GalleryModal: React.FC<{ 
-  item: GalleryItem, 
-  data: RowData[], 
+const GalleryModal: React.FC<{
+  item: GalleryItem,
+  data: RowData[],
   onClose: () => void,
-  onDelete: (id: string) => void 
+  onDelete: (id: string) => void
 }> = ({ item, data, onClose, onDelete }) => {
   const chartId = `chart-export-${item.id}`;
-  
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-[#202124] border border-gray-700 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
@@ -186,9 +185,9 @@ const GalleryModal: React.FC<{
           </div>
           <div className="flex items-center gap-2">
             {item.type === 'chart' && (
-               <Button variant="secondary" className="h-8 text-xs" onClick={() => downloadChartAsPng(chartId, item.title)}>
-                 <ImageIcon size={14} className="mr-2" /> Save as PNG
-               </Button>
+              <Button variant="secondary" className="h-8 text-xs" onClick={() => downloadChartAsPng(chartId, item.title)}>
+                <ImageIcon size={14} className="mr-2" /> Save as PNG
+              </Button>
             )}
             <Button variant="danger" className="h-8 text-xs" onClick={() => onDelete(item.id)}>
               <Trash2 size={14} className="mr-1" /> Delete
@@ -197,14 +196,14 @@ const GalleryModal: React.FC<{
             <button onClick={onClose} className="text-gray-400 hover:text-white p-1.5 hover:bg-gray-700 rounded-full transition-colors"><X size={20} /></button>
           </div>
         </div>
-        
+
         <div className="p-6 overflow-y-auto bg-[#1e1f20]">
           {item.type === 'chart' ? (
-             <div className="h-[500px] w-full">
-               <ChartRenderer id={chartId} config={item.data as ChartConfig} data={data} className="w-full h-full" />
-             </div>
+            <div className="h-[500px] w-full">
+              <ChartRenderer id={chartId} config={item.data as ChartConfig} data={data} className="w-full h-full" />
+            </div>
           ) : (
-             <InsightView data={item.data as InsightData} />
+            <InsightView data={item.data as InsightData} />
           )}
         </div>
       </div>
@@ -213,10 +212,10 @@ const GalleryModal: React.FC<{
 };
 
 // Component: Settings Modal
-const SettingsModal: React.FC<{ 
-  config: AIConfig, 
-  onSave: (cfg: AIConfig) => void, 
-  onClose: () => void 
+const SettingsModal: React.FC<{
+  config: AIConfig,
+  onSave: (cfg: AIConfig) => void,
+  onClose: () => void
 }> = ({ config, onSave, onClose }) => {
   const [localConfig, setLocalConfig] = useState(config);
 
@@ -236,13 +235,13 @@ const SettingsModal: React.FC<{
           <div className="space-y-2">
             <label className="text-xs font-medium text-gray-400 uppercase">AI Provider</label>
             <div className="flex bg-[#151618] p-1 rounded-lg border border-gray-700">
-              <button 
+              <button
                 onClick={() => setLocalConfig({ ...localConfig, provider: 'gemini' })}
                 className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${localConfig.provider === 'gemini' ? 'bg-[#303134] text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
               >
                 Google Gemini
               </button>
-              <button 
+              <button
                 onClick={() => setLocalConfig({ ...localConfig, provider: 'openrouter' })}
                 className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${localConfig.provider === 'openrouter' ? 'bg-[#303134] text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
               >
@@ -253,48 +252,48 @@ const SettingsModal: React.FC<{
 
           {/* Gemini Info */}
           {localConfig.provider === 'gemini' && (
-             <div className="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3">
-                <div className="flex gap-2 text-blue-300">
-                   <Sparkles size={16} className="mt-0.5" />
-                   <div className="text-xs leading-relaxed">
-                      Using built-in Google Gemini API. <br/>
-                      <span className="opacity-70">Fast, reliable, and supports Google Search grounding.</span>
-                   </div>
+            <div className="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3">
+              <div className="flex gap-2 text-blue-300">
+                <Sparkles size={16} className="mt-0.5" />
+                <div className="text-xs leading-relaxed">
+                  Using built-in Google Gemini API. <br />
+                  <span className="opacity-70">Fast, reliable, and supports Google Search grounding.</span>
                 </div>
-             </div>
+              </div>
+            </div>
           )}
 
           {/* OpenRouter Fields */}
           {localConfig.provider === 'openrouter' && (
             <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
-               <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-400">OpenRouter API Key</label>
-                  <input 
-                    type="password" 
-                    className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600"
-                    placeholder="sk-or-..."
-                    value={localConfig.openRouterKey}
-                    onChange={(e) => setLocalConfig({...localConfig, openRouterKey: e.target.value})}
-                  />
-               </div>
-               <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-400">Model ID</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600 font-mono"
-                    placeholder="google/gemini-2.0-flash-lite-preview-02-05:free"
-                    value={localConfig.openRouterModel}
-                    onChange={(e) => setLocalConfig({...localConfig, openRouterModel: e.target.value})}
-                  />
-                  <p className="text-[10px] text-gray-500">Examples: <code className="bg-black/30 px-1 rounded">google/gemini-2.0-flash-lite-preview-02-05:free</code>, <code className="bg-black/30 px-1 rounded">openrouter/sherlock-dash-alpha</code></p>
-               </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-400">OpenRouter API Key</label>
+                <input
+                  type="password"
+                  className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                  placeholder="sk-or-..."
+                  value={localConfig.openRouterKey}
+                  onChange={(e) => setLocalConfig({ ...localConfig, openRouterKey: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-400">Model ID</label>
+                <input
+                  type="text"
+                  className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600 font-mono"
+                  placeholder="google/gemini-2.0-flash-lite-preview-02-05:free"
+                  value={localConfig.openRouterModel}
+                  onChange={(e) => setLocalConfig({ ...localConfig, openRouterModel: e.target.value })}
+                />
+                <p className="text-[10px] text-gray-500">Examples: <code className="bg-black/30 px-1 rounded">google/gemini-2.0-flash-lite-preview-02-05:free</code>, <code className="bg-black/30 px-1 rounded">openrouter/sherlock-dash-alpha</code></p>
+              </div>
             </div>
           )}
         </div>
 
         <div className="p-4 border-t border-gray-700 bg-[#2a2b2e] flex justify-end gap-2">
-           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-           <Button variant="primary" onClick={() => { onSave(localConfig); onClose(); }}>Save Changes</Button>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={() => { onSave(localConfig); onClose(); }}>Save Changes</Button>
         </div>
       </div>
     </div>
@@ -315,7 +314,7 @@ function App() {
   const [columns, setColumns] = useState<string[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
-  
+
   // Local-only state
   const [filename, setFilename] = useState<string>("Untitled Project");
   const [expandedGalleryItem, setExpandedGalleryItem] = useState<GalleryItem | null>(null);
@@ -331,10 +330,10 @@ function App() {
   // AI Settings State (Persisted in LocalStorage)
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
     const saved = localStorage.getItem('lumina_ai_config');
-    return saved ? JSON.parse(saved) : { 
-      provider: 'gemini', 
-      openRouterKey: '', 
-      openRouterModel: 'google/gemini-2.0-flash-lite-preview-02-05:free' 
+    return saved ? JSON.parse(saved) : {
+      provider: 'gemini',
+      openRouterKey: '',
+      openRouterModel: 'google/gemini-2.0-flash-lite-preview-02-05:free'
     };
   });
 
@@ -346,11 +345,12 @@ function App() {
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room') || 'lumina-main-room'; // Default room
     setRoomName(room);
-    
-    // Initialize WebRTC Provider with robust public servers
+
+    // Initialize WebRTC Provider with custom signaling server
     const newProvider = new WebrtcProvider(room, doc, {
-      // Use the reliable public signaling server
-      signaling: ['wss://signaling.yjs.dev'],
+      // Use secure signaling server with password authentication from environment variables
+      signaling: [import.meta.env.VITE_SIGNALING_SERVER || 'wss://signaling-server.solar2004.deno.net'],
+      password: import.meta.env.VITE_SIGNALING_PASSWORD || 'lorianthelaw1469',
       // Add STUN servers to facilitate peer-to-peer connections without a TURN server
       peerOpts: {
         config: {
@@ -371,15 +371,15 @@ function App() {
     newProvider.on('synced', (synced: any) => {
       if (synced && yDataArray.length === 0) {
         doc.transact(() => {
-            // Populate with default data
-            DEFAULT_DATA.forEach(row => yDataArray.push([row]));
-            Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
-            yChatArray.push([{ 
-                id: 'welcome', 
-                role: 'model', 
-                text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.', 
-                timestamp: Date.now() 
-            }]);
+          // Populate with default data
+          DEFAULT_DATA.forEach(row => yDataArray.push([row]));
+          Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
+          yChatArray.push([{
+            id: 'welcome',
+            role: 'model',
+            text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
+            timestamp: Date.now()
+          }]);
         });
       }
       setConnectionStatus('connected');
@@ -399,24 +399,24 @@ function App() {
 
     // UndoManager
     const um = new Y.UndoManager([yDataArray, yColumnsArray], {
-        trackedOrigins: new Set([doc.clientID, null]), // Track changes from local and others (optional, usually just local)
+      trackedOrigins: new Set([doc.clientID, null]), // Track changes from local and others (optional, usually just local)
     });
     setUndoManager(um);
 
     // Awareness (Presence)
     newProvider.awareness.setLocalStateField('user', localUser);
-    
+
     newProvider.awareness.on('change', () => {
       const states = newProvider.awareness.getStates();
       const activeUsers: Collaborator[] = [];
       states.forEach((state: any, clientId: number) => {
         if (state.user && clientId !== doc.clientID) {
-           activeUsers.push({
-             clientId,
-             name: state.user.name,
-             color: state.user.color,
-             selection: state.selection
-           });
+          activeUsers.push({
+            clientId,
+            name: state.user.name,
+            color: state.user.color,
+            selection: state.selection
+          });
         }
       });
       setCollaborators(activeUsers);
@@ -447,11 +447,11 @@ function App() {
     doc.transact(() => {
       const yDataArray = doc.getArray('data');
       const yColumnsArray = doc.getArray('columns');
-      
+
       // Update Columns if needed
       if (newColumns) {
-          yColumnsArray.delete(0, yColumnsArray.length);
-          yColumnsArray.push(newColumns);
+        yColumnsArray.delete(0, yColumnsArray.length);
+        yColumnsArray.push(newColumns);
       }
 
       // Update Data (Full Replace strategy for simplicity with small datasets)
@@ -461,35 +461,35 @@ function App() {
   };
 
   const updateSelection = (selection: { row: number, col: string } | null) => {
-      provider?.awareness.setLocalStateField('selection', selection);
+    provider?.awareness.setLocalStateField('selection', selection);
   };
 
   const addChatMessage = (msg: ChatMessage) => {
-      doc.transact(() => {
-          doc.getArray('chat').push([msg]);
-      });
+    doc.transact(() => {
+      doc.getArray('chat').push([msg]);
+    });
   };
 
   const addGalleryItem = (item: GalleryItem) => {
-      doc.transact(() => {
-          const arr = doc.getArray('gallery');
-          arr.insert(0, [item]); // Prepend
-      });
+    doc.transact(() => {
+      const arr = doc.getArray('gallery');
+      arr.insert(0, [item]); // Prepend
+    });
   };
 
   const deleteGalleryItem = (id: string) => {
     if (!window.confirm("Are you sure you want to delete this item? This will remove it for all collaborators.")) return;
-    
+
     // If the deleted item is the one currently expanded, close the modal.
     if (expandedGalleryItem?.id === id) {
-        setExpandedGalleryItem(null);
+      setExpandedGalleryItem(null);
     }
 
     doc.transact(() => {
       const arr = doc.getArray('gallery');
       let indexToDelete = -1;
       const items = arr.toArray() as GalleryItem[];
-      for(let i = 0; i < items.length; i++) {
+      for (let i = 0; i < items.length; i++) {
         if (items[i].id === id) {
           indexToDelete = i;
           break;
@@ -515,7 +515,7 @@ function App() {
     if (!newColumns && newData.length > 0) {
       const allKeys = new Set<string>();
       newData.forEach(row => {
-        if(row) Object.keys(row).forEach(k => allKeys.add(k));
+        if (row) Object.keys(row).forEach(k => allKeys.add(k));
       });
       const currentSet = new Set(columns);
       const newKeys = Array.from(allKeys).filter(k => !currentSet.has(k));
@@ -617,7 +617,7 @@ function App() {
         description: response.text
       });
       // We don't add the success message yet, just the explanation
-      
+
     } else if (response.action === AIActionType.CREATE_CHART && response.payload) {
       modelMsg.chartConfig = response.payload;
       addGalleryItem({
@@ -645,77 +645,77 @@ function App() {
   };
 
   const copyRoomLink = async () => {
-      const url = new URL(window.location.href);
-      
-      // Force the room parameter into the URL if not present
-      if (!url.searchParams.has('room')) {
-          url.searchParams.set('room', roomName);
-          // Update the browser's address bar without reloading
-          window.history.pushState({}, '', url.toString());
-      }
-      
-      const link = url.toString();
-      
-      const showSuccess = () => {
-          const btn = document.getElementById('room-share-btn');
-          if(btn) {
-             // Store original HTML only if not already stored to avoid overwriting with "Copied!"
-             if (!btn.dataset.originalHtml) {
-                 btn.dataset.originalHtml = btn.innerHTML;
-             }
-             
-             btn.innerHTML = '<span class="text-green-400 font-bold">Copied!</span>';
-             
-             // Reset after timeout
-             setTimeout(() => {
-                 if (btn.dataset.originalHtml) {
-                     btn.innerHTML = btn.dataset.originalHtml;
-                 }
-             }, 2000);
-          } else {
-             alert("Room link copied to clipboard!");
+    const url = new URL(window.location.href);
+
+    // Force the room parameter into the URL if not present
+    if (!url.searchParams.has('room')) {
+      url.searchParams.set('room', roomName);
+      // Update the browser's address bar without reloading
+      window.history.pushState({}, '', url.toString());
+    }
+
+    const link = url.toString();
+
+    const showSuccess = () => {
+      const btn = document.getElementById('room-share-btn');
+      if (btn) {
+        // Store original HTML only if not already stored to avoid overwriting with "Copied!"
+        if (!btn.dataset.originalHtml) {
+          btn.dataset.originalHtml = btn.innerHTML;
+        }
+
+        btn.innerHTML = '<span class="text-green-400 font-bold">Copied!</span>';
+
+        // Reset after timeout
+        setTimeout(() => {
+          if (btn.dataset.originalHtml) {
+            btn.innerHTML = btn.dataset.originalHtml;
           }
-      };
+        }, 2000);
+      } else {
+        alert("Room link copied to clipboard!");
+      }
+    };
+
+    try {
+      await navigator.clipboard.writeText(link);
+      showSuccess();
+    } catch (err) {
+      console.warn("Clipboard API failed, attempting fallback...", err);
+
+      // Fallback: Create hidden textarea
+      const textArea = document.createElement("textarea");
+      textArea.value = link;
+
+      // Make it invisible but part of the DOM
+      textArea.style.top = "0";
+      textArea.style.left = "0";
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
 
       try {
-          await navigator.clipboard.writeText(link);
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
           showSuccess();
-      } catch (err) {
-          console.warn("Clipboard API failed, attempting fallback...", err);
-          
-          // Fallback: Create hidden textarea
-          const textArea = document.createElement("textarea");
-          textArea.value = link;
-          
-          // Make it invisible but part of the DOM
-          textArea.style.top = "0";
-          textArea.style.left = "0";
-          textArea.style.position = "fixed";
-          textArea.style.opacity = "0";
-
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          
-          try {
-              const successful = document.execCommand('copy');
-              document.body.removeChild(textArea);
-              if(successful) {
-                  showSuccess();
-              } else {
-                  throw new Error("Fallback copy failed");
-              }
-          } catch (fallbackErr) {
-              document.body.removeChild(textArea);
-              console.error("Copy failed", fallbackErr);
-              prompt("Could not copy automatically. Please copy this link:", link);
-          }
+        } else {
+          throw new Error("Fallback copy failed");
+        }
+      } catch (fallbackErr) {
+        document.body.removeChild(textArea);
+        console.error("Copy failed", fallbackErr);
+        prompt("Could not copy automatically. Please copy this link:", link);
       }
+    }
   };
 
   return (
     <div className="flex flex-col h-screen bg-[#1e1f20] text-gray-200 font-sans overflow-hidden selection:bg-blue-500/30">
-      
+
       {expandedGalleryItem && <GalleryModal item={expandedGalleryItem} data={data} onClose={() => setExpandedGalleryItem(null)} onDelete={deleteGalleryItem} />}
       {showSettings && <SettingsModal config={aiConfig} onSave={setAiConfig} onClose={() => setShowSettings(false)} />}
 
@@ -727,28 +727,28 @@ function App() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold text-white tracking-wide uppercase opacity-90">LuminaData <span className="text-blue-400 text-[10px] bg-blue-400/10 px-1.5 py-0.5 rounded ml-1">LIVE</span></h1>
-                <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-red-500 animate-pulse'}`}></div>
+              <h1 className="text-sm font-bold text-white tracking-wide uppercase opacity-90">LuminaData <span className="text-blue-400 text-[10px] bg-blue-400/10 px-1.5 py-0.5 rounded ml-1">LIVE</span></h1>
+              <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-red-500 animate-pulse'}`}></div>
             </div>
-            
+
             <div className="flex items-center gap-2 mt-0.5">
-                <input 
-                value={filename} 
+              <input
+                value={filename}
                 onChange={(e) => setFilename(e.target.value)}
                 className="bg-transparent text-xs text-gray-400 border-none focus:ring-0 p-0 hover:text-white w-32 transition-colors font-medium truncate"
-                />
-                <span className="text-[10px] text-gray-600 px-1">|</span>
-                <button 
-                  id="room-share-btn"
-                  onClick={copyRoomLink} 
-                  className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-900/30 transition-colors min-w-[80px] justify-center"
-                  title="Click to copy invite link"
-                >
-                    <LinkIcon size={10} /> {roomName}
-                </button>
+              />
+              <span className="text-[10px] text-gray-600 px-1">|</span>
+              <button
+                id="room-share-btn"
+                onClick={copyRoomLink}
+                className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-900/30 transition-colors min-w-[80px] justify-center"
+                title="Click to copy invite link"
+              >
+                <LinkIcon size={10} /> {roomName}
+              </button>
             </div>
           </div>
-          
+
           <div className="h-6 w-[1px] bg-gray-700 mx-2"></div>
           <div className="flex items-center gap-1">
             <Button variant="icon" onClick={handleUndo} title="Undo (Collaborative)">
@@ -758,68 +758,68 @@ function App() {
               <Redo2 size={18} />
             </Button>
           </div>
-          
+
           {/* Collaborators */}
           <div className="flex items-center -space-x-2 ml-2">
-              <div className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: localUser.color }} title={`You: ${localUser.name}`}>
-                  {localUser.name.charAt(0)}
+            <div className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: localUser.color }} title={`You: ${localUser.name}`}>
+              {localUser.name.charAt(0)}
+            </div>
+            {collaborators.slice(0, 3).map(c => (
+              <div key={c.clientId} className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white relative group" style={{ backgroundColor: c.color }}>
+                {c.name.charAt(0)}
+                <div className="absolute bottom-full mb-1 hidden group-hover:block bg-black text-white text-[10px] px-1 rounded whitespace-nowrap">{c.name}</div>
               </div>
-              {collaborators.slice(0, 3).map(c => (
-                   <div key={c.clientId} className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white relative group" style={{ backgroundColor: c.color }}>
-                      {c.name.charAt(0)}
-                      <div className="absolute bottom-full mb-1 hidden group-hover:block bg-black text-white text-[10px] px-1 rounded whitespace-nowrap">{c.name}</div>
-                   </div>
-              ))}
-              {collaborators.length > 3 && (
-                  <div className="w-8 h-8 rounded-full border-2 border-[#202124] bg-gray-600 flex items-center justify-center text-[10px] text-white">
-                      +{collaborators.length - 3}
-                  </div>
-              )}
+            ))}
+            {collaborators.length > 3 && (
+              <div className="w-8 h-8 rounded-full border-2 border-[#202124] bg-gray-600 flex items-center justify-center text-[10px] text-white">
+                +{collaborators.length - 3}
+              </div>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-           <input 
-             type="file" 
-             accept=".xlsx, .xls, .csv" 
-             ref={fileInputRef}
-             className="hidden"
-             onChange={handleFileUpload}
-           />
-           <Button variant="icon" onClick={() => setShowSettings(true)} title="AI Settings">
-             <Settings size={18} className={aiConfig.provider === 'openrouter' ? 'text-green-400' : ''} />
-           </Button>
-           <div className="h-6 w-[1px] bg-gray-700"></div>
-           <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
-             <Upload size={16} className="mr-2" /> Import
-           </Button>
-           <Button variant="secondary" onClick={() => exportToExcel(data, filename)}>
-             <Download size={16} className="mr-2" /> Export
-           </Button>
-           <Button variant="secondary" onClick={() => exportAiSession(chatHistory, filename)}>
-             <Save size={16} className="mr-2" /> Save Chat
-           </Button>
-           <Button variant="icon" onClick={() => setShowChat(!showChat)} className={showChat ? 'text-blue-400 bg-blue-400/10' : ''}>
-             <MessageSquare size={20} />
-           </Button>
+          <input
+            type="file"
+            accept=".xlsx, .xls, .csv"
+            ref={fileInputRef}
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+          <Button variant="icon" onClick={() => setShowSettings(true)} title="AI Settings">
+            <Settings size={18} className={aiConfig.provider === 'openrouter' ? 'text-green-400' : ''} />
+          </Button>
+          <div className="h-6 w-[1px] bg-gray-700"></div>
+          <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+            <Upload size={16} className="mr-2" /> Import
+          </Button>
+          <Button variant="secondary" onClick={() => exportToExcel(data, filename)}>
+            <Download size={16} className="mr-2" /> Export
+          </Button>
+          <Button variant="secondary" onClick={() => exportAiSession(chatHistory, filename)}>
+            <Save size={16} className="mr-2" /> Save Chat
+          </Button>
+          <Button variant="icon" onClick={() => setShowChat(!showChat)} className={showChat ? 'text-blue-400 bg-blue-400/10' : ''}>
+            <MessageSquare size={20} />
+          </Button>
         </div>
       </header>
 
       {/* Main Workspace */}
       <main className="flex-1 flex overflow-hidden relative">
-        
+
         {/* Left Section: Spreadsheet + Gallery Dock */}
         <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${showChat ? 'mr-96' : ''}`}>
-          
+
           {/* Spreadsheet Container */}
           <div className="flex-1 p-4 pb-0 min-h-0 relative">
             <div className="h-full flex flex-col rounded-t-xl overflow-hidden border border-gray-700 shadow-2xl bg-[#202124]">
-              <Spreadsheet 
-                  data={data} 
-                  columns={columns} 
-                  onUpdate={handleDataUpdate}
-                  onSelectionChange={updateSelection}
-                  collaborators={collaborators} 
+              <Spreadsheet
+                data={data}
+                columns={columns}
+                onUpdate={handleDataUpdate}
+                onSelectionChange={updateSelection}
+                collaborators={collaborators}
               />
             </div>
           </div>
@@ -836,78 +836,77 @@ function App() {
             </div>
 
             <div className="flex-1 overflow-x-auto p-4 flex items-center gap-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-               {galleryItems.length === 0 ? (
-                 <div className="w-full flex flex-col items-center justify-center text-gray-600 gap-2 opacity-50">
-                    <BarChart3 size={32} />
-                    <p className="text-xs font-mono">Ask AI to create charts. They will appear here for everyone.</p>
-                 </div>
-               ) : (
-                 galleryItems.map((item) => (
-                   <div 
-                      key={item.id} 
-                      onClick={() => setExpandedGalleryItem(item)}
-                      className="min-w-[220px] w-[220px] h-[140px] bg-[#202124] border border-gray-700 hover:border-blue-500/50 rounded-lg cursor-pointer relative group transition-all hover:scale-105 hover:shadow-xl flex flex-col overflow-hidden"
-                   >
-                      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <button 
-                          className="p-1 bg-red-500/80 hover:bg-red-600 rounded text-white"
-                          onClick={(e) => { e.stopPropagation(); deleteGalleryItem(item.id); }}
-                          title="Delete for everyone"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                        <button className="p-1 bg-black/50 hover:bg-blue-600 rounded text-white">
-                          <Maximize2 size={12} />
-                        </button>
-                      </div>
-                      
-                      <div className="px-3 py-2 border-b border-gray-800 bg-[#252629] flex items-center gap-2">
-                        {item.type === 'chart' ? <BarChart3 size={12} className="text-purple-400" /> : <Lightbulb size={12} className="text-blue-400" />}
-                        <span className="text-[10px] font-medium text-gray-300 truncate w-full">{item.title}</span>
-                      </div>
+              {galleryItems.length === 0 ? (
+                <div className="w-full flex flex-col items-center justify-center text-gray-600 gap-2 opacity-50">
+                  <BarChart3 size={32} />
+                  <p className="text-xs font-mono">Ask AI to create charts. They will appear here for everyone.</p>
+                </div>
+              ) : (
+                galleryItems.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => setExpandedGalleryItem(item)}
+                    className="min-w-[220px] w-[220px] h-[140px] bg-[#202124] border border-gray-700 hover:border-blue-500/50 rounded-lg cursor-pointer relative group transition-all hover:scale-105 hover:shadow-xl flex flex-col overflow-hidden"
+                  >
+                    <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                      <button
+                        className="p-1 bg-red-500/80 hover:bg-red-600 rounded text-white"
+                        onClick={(e) => { e.stopPropagation(); deleteGalleryItem(item.id); }}
+                        title="Delete for everyone"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                      <button className="p-1 bg-black/50 hover:bg-blue-600 rounded text-white">
+                        <Maximize2 size={12} />
+                      </button>
+                    </div>
 
-                      <div className="flex-1 p-2 overflow-hidden relative">
-                        {item.type === 'chart' ? (
-                           <div className="pointer-events-none transform scale-50 origin-top-left w-[200%] h-[200%]">
-                              <ChartRenderer config={item.data as ChartConfig} data={data} />
-                           </div>
-                        ) : (
-                          <div className="text-[10px] text-gray-400 leading-relaxed line-clamp-4 p-1">
-                            {(item.data as InsightData).summary}
-                          </div>
-                        )}
-                      </div>
-                   </div>
-                 ))
-               )}
+                    <div className="px-3 py-2 border-b border-gray-800 bg-[#252629] flex items-center gap-2">
+                      {item.type === 'chart' ? <BarChart3 size={12} className="text-purple-400" /> : <Lightbulb size={12} className="text-blue-400" />}
+                      <span className="text-[10px] font-medium text-gray-300 truncate w-full">{item.title}</span>
+                    </div>
+
+                    <div className="flex-1 p-2 overflow-hidden relative">
+                      {item.type === 'chart' ? (
+                        <div className="pointer-events-none transform scale-50 origin-top-left w-[200%] h-[200%]">
+                          <ChartRenderer config={item.data as ChartConfig} data={data} />
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-gray-400 leading-relaxed line-clamp-4 p-1">
+                          {(item.data as InsightData).summary}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
 
         {/* Chat Sidebar */}
-        <div 
+        <div
           className={`fixed inset-y-0 right-0 w-96 bg-[#28292c] border-l border-gray-700 shadow-2xl flex flex-col z-30 mt-[61px] transform transition-transform duration-300 ease-cubic ${showChat ? 'translate-x-0' : 'translate-x-full'}`}
         >
           <div className="p-4 border-b border-gray-700 flex items-center justify-between bg-[#2d2e31] shadow-sm shrink-0">
-             <div className="flex items-center gap-2 text-blue-400 font-medium">
-               <Sparkles size={18} className="animate-pulse" />
-               <span>Group AI Assistant</span>
-               {aiConfig.provider === 'openrouter' && <span className="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-900">OPENROUTER</span>}
-             </div>
-             <button onClick={() => setShowChat(false)} className="text-gray-500 hover:text-gray-300 transition-colors">
-               <X size={18} />
-             </button>
+            <div className="flex items-center gap-2 text-blue-400 font-medium">
+              <Sparkles size={18} className="animate-pulse" />
+              <span>Group AI Assistant</span>
+              {aiConfig.provider === 'openrouter' && <span className="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-900">OPENROUTER</span>}
+            </div>
+            <button onClick={() => setShowChat(false)} className="text-gray-500 hover:text-gray-300 transition-colors">
+              <X size={18} />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={chatScrollRef}>
             {chatHistory.map((msg) => (
               <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                <div 
-                  className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-md relative group ${
-                    msg.role === 'user' 
-                      ? 'bg-blue-600 text-white rounded-br-none' 
+                <div
+                  className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-md relative group ${msg.role === 'user'
+                      ? 'bg-blue-600 text-white rounded-br-none'
                       : 'bg-[#3c4043] text-gray-100 rounded-bl-none border border-gray-600'
-                  }`}
+                    }`}
                 >
                   <div className="whitespace-pre-wrap">
                     {msg.text.split('\n').map((line, i) => (
@@ -919,10 +918,10 @@ function App() {
                     <div className="mt-3 pt-2 border-t border-white/10">
                       <div className="flex flex-wrap gap-2">
                         {msg.groundingUrls.slice(0, 3).map((url, idx) => (
-                          <a 
-                            key={idx} 
-                            href={url.uri} 
-                            target="_blank" 
+                          <a
+                            key={idx}
+                            href={url.uri}
+                            target="_blank"
                             rel="noopener noreferrer"
                             className="text-[10px] bg-black/20 hover:bg-black/40 px-2 py-1 rounded text-blue-200 truncate max-w-[140px] transition-colors"
                           >
@@ -934,38 +933,38 @@ function App() {
                   )}
                 </div>
                 <span className="text-[10px] text-gray-600 mt-1 px-1 select-none">
-                  {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             ))}
-            
+
             {/* Pending Update Confirmation Card */}
             {pendingUpdate && (
-               <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-4 shadow-lg mx-1">
-                  <div className="flex items-start gap-3 mb-3">
-                     <AlertTriangle size={20} className="text-yellow-500 shrink-0 mt-0.5" />
-                     <div>
-                       <h4 className="text-sm font-bold text-yellow-200">Review Data Changes</h4>
-                       <p className="text-xs text-gray-400 mt-1">The AI has prepared a data update. This will modify the spreadsheet for everyone.</p>
-                     </div>
+              <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-4 shadow-lg mx-1">
+                <div className="flex items-start gap-3 mb-3">
+                  <AlertTriangle size={20} className="text-yellow-500 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-bold text-yellow-200">Review Data Changes</h4>
+                    <p className="text-xs text-gray-400 mt-1">The AI has prepared a data update. This will modify the spreadsheet for everyone.</p>
                   </div>
-                  <div className="flex gap-2 justify-end">
-                     <Button variant="danger" className="h-8 text-xs" onClick={discardPendingUpdate}>
-                        Discard
-                     </Button>
-                     <Button variant="success" className="h-8 text-xs" onClick={confirmPendingUpdate}>
-                        <CheckCircle2 size={14} className="mr-1" /> Apply Changes
-                     </Button>
-                  </div>
-               </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="danger" className="h-8 text-xs" onClick={discardPendingUpdate}>
+                    Discard
+                  </Button>
+                  <Button variant="success" className="h-8 text-xs" onClick={confirmPendingUpdate}>
+                    <CheckCircle2 size={14} className="mr-1" /> Apply Changes
+                  </Button>
+                </div>
+              </div>
             )}
 
             {isThinking && (
               <div className="flex items-center gap-3 text-gray-500 text-sm p-2">
                 <div className="flex space-x-1">
-                   <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                   <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                   <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
                 </div>
                 <span className="text-xs">Lumina is processing...</span>
               </div>
@@ -975,7 +974,7 @@ function App() {
           {/* Input Area */}
           <div className="p-4 bg-[#2d2e31] border-t border-gray-700 shrink-0">
             <div className="relative flex items-center group">
-              <input 
+              <input
                 type="text"
                 className="w-full bg-[#202124] text-white rounded-xl pl-4 pr-12 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-gray-600 group-hover:border-gray-500 transition-colors placeholder-gray-500 text-sm"
                 placeholder={aiConfig.provider === 'openrouter' ? `Ask ${aiConfig.openRouterModel.split('/').pop()}...` : "Ask Lumina (Gemini)..."}
@@ -984,7 +983,7 @@ function App() {
                 onKeyDown={(e) => e.key === 'Enter' && !pendingUpdate && handleSendMessage()}
                 disabled={isThinking || !!pendingUpdate}
               />
-              <button 
+              <button
                 onClick={handleSendMessage}
                 disabled={!inputMessage.trim() || isThinking || !!pendingUpdate}
                 className="absolute right-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-0 disabled:scale-90 transition-all duration-200"

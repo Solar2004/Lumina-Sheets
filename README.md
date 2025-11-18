@@ -43,10 +43,13 @@ View the app in AI Studio: [https://ai.studio/apps/drive/1VUcdiZJAM_G7r1YyIVPJLz
    ```
 
 3. Set up environment variables:
-   Create a `.env.local` file in the root directory and add your Gemini API key:
+   Create a `.env.local` file in the root directory (you can copy from `.env.example`):
    ```env
    GEMINI_API_KEY=your_gemini_api_key_here
+   VITE_SIGNALING_SERVER=wss://signaling-server.solar2004.deno.net
+   VITE_SIGNALING_PASSWORD=your_signaling_password_here
    ```
+
 
 4. Run the development server:
    ```bash
