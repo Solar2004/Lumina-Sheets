@@ -1,0 +1,926 @@
+
+import React, { useState, useEffect, useRef } from 'react';
+import * as Y from 'yjs';
+import { WebrtcProvider } from 'y-webrtc';
+import { 
+  FileSpreadsheet, 
+  MessageSquare, 
+  Download, 
+  Upload, 
+  Send, 
+  Sparkles, 
+  Save,
+  X,
+  Undo2,
+  Redo2,
+  Lightbulb,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Maximize2,
+  BarChart3,
+  Terminal,
+  Users,
+  Link as LinkIcon,
+  Wifi,
+  WifiOff,
+  Trash2,
+  Settings,
+  Cpu,
+  CheckCircle2,
+  AlertTriangle,
+  Image as ImageIcon
+} from 'lucide-react';
+
+import { DEFAULT_DATA, RowData, ChatMessage, AIActionType, InsightData, GalleryItem, ChartConfig, Collaborator, AIConfig, AIProvider } from './types';
+import Spreadsheet from './components/Spreadsheet';
+import ChartRenderer from './components/ChartRenderer';
+import { generateResponse } from './services/geminiService';
+import { exportToExcel, parseExcelFile, exportAiSession } from './services/excelService';
+
+// Helper to generate random user colors
+const getRandomColor = () => {
+  const colors = ['#f28b82', '#fdd663', '#81c995', '#8ab4f8', '#c58af9', '#e6c9a8', '#e8eaed'];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
+const getRandomName = () => {
+  const names = ['Anonymous Axolotl', 'Busy Beaver', 'Curious Cat', 'Daring Dog', 'Eager Eagle', 'Funny Fox'];
+  return names[Math.floor(Math.random() * names.length)];
+};
+
+// Helper to download chart as PNG
+const downloadChartAsPng = (chartId: string, title: string) => {
+  const svgElement = document.querySelector(`#${chartId} .recharts-wrapper svg`) as SVGSVGElement;
+  
+  if (!svgElement) {
+    alert("Could not locate chart element.");
+    return;
+  }
+
+  // Serialize SVG to XML
+  const serializer = new XMLSerializer();
+  const svgString = serializer.serializeToString(svgElement);
+
+  // Create a canvas
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Get dimensions
+  const rect = svgElement.getBoundingClientRect();
+  canvas.width = rect.width * 2; // 2x for retina/quality
+  canvas.height = rect.height * 2;
+
+  const img = new Image();
+  const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+
+  img.onload = () => {
+    if (ctx) {
+      ctx.fillStyle = '#252629'; // Background color match
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(2, 2);
+      ctx.drawImage(img, 0, 0);
+      
+      // Download
+      const pngUrl = canvas.toDataURL('image/png');
+      const downloadLink = document.createElement('a');
+      downloadLink.href = pngUrl;
+      downloadLink.download = `${title.replace(/\s+/g, '_')}_chart.png`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      
+      URL.revokeObjectURL(url);
+    }
+  };
+  img.src = url;
+};
+
+// Reusable components for layout
+const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'icon' | 'danger' | 'success' }> = ({ children, variant = 'primary', className = '', ...props }) => {
+  const baseStyle = "inline-flex items-center justify-center rounded-md text-sm font-medium transition-all focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40";
+  const variants = {
+    primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-900/20 px-4 py-2 active:scale-95",
+    secondary: "bg-[#3c4043] text-gray-200 hover:bg-[#4a4e51] border border-gray-600 px-4 py-2",
+    success: "bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-900/20 px-4 py-2 active:scale-95",
+    danger: "bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-600/50 px-4 py-2 active:scale-95",
+    icon: "h-9 w-9 hover:bg-[#3c4043] text-gray-400 hover:text-white rounded-full"
+  };
+  return (
+    <button className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>
+      {children}
+    </button>
+  );
+};
+
+// Component: Insight View (Reusable)
+const InsightView: React.FC<{ data: InsightData }> = ({ data }) => (
+  <div className="space-y-6 p-4">
+    {/* Summary Section */}
+    <div className="space-y-2">
+      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Executive Summary</h3>
+      <div className="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 text-blue-100 shadow-inner">
+        <p className="text-sm leading-relaxed">{data.summary}</p>
+      </div>
+    </div>
+    
+    {/* Key Stats Grid */}
+    <div className="space-y-2">
+      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Key Metrics</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {data.keyStats.map((stat, idx) => (
+          <div key={idx} className="bg-[#303134] p-4 rounded-xl border border-gray-700/50 hover:border-gray-600 transition-colors relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+              {stat.trend === 'up' ? <TrendingUp size={32} /> : stat.trend === 'down' ? <TrendingDown size={32} /> : <Minus size={32} />}
+            </div>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1 font-semibold">{stat.label}</p>
+            <div className="flex items-end gap-2">
+              <span className="text-2xl font-bold text-white tracking-tight truncate">{stat.value}</span>
+              <div className={`flex items-center text-[10px] font-bold mb-1.5 px-1 py-0.5 rounded ${
+                stat.trend === 'up' ? 'bg-green-500/20 text-green-400' : 
+                stat.trend === 'down' ? 'bg-red-500/20 text-red-400' : 
+                'bg-gray-500/20 text-gray-400'
+              }`}>
+                {stat.trend === 'up' && <TrendingUp size={10} className="mr-1" />}
+                {stat.trend === 'down' && <TrendingDown size={10} className="mr-1" />}
+                {stat.trend?.toUpperCase() || 'NEUTRAL'}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* Recommendation */}
+    <div className="space-y-2">
+       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">AI Recommendation</h3>
+       <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 border border-gray-700">
+          <p className="text-sm text-gray-300 italic border-l-4 border-blue-500 pl-4">{data.recommendation}</p>
+       </div>
+    </div>
+  </div>
+);
+
+// Component: Gallery Expanded Modal
+const GalleryModal: React.FC<{ 
+  item: GalleryItem, 
+  data: RowData[], 
+  onClose: () => void,
+  onDelete: (id: string) => void 
+}> = ({ item, data, onClose, onDelete }) => {
+  const chartId = `chart-export-${item.id}`;
+  
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-[#202124] border border-gray-700 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+        <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gradient-to-r from-[#2a2b2e] to-[#202124]">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-lg ${item.type === 'chart' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
+              {item.type === 'chart' ? <BarChart3 size={20} /> : <Lightbulb size={20} />}
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">{item.title}</h2>
+              <p className="text-xs text-gray-400">{new Date(item.timestamp).toLocaleString()}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {item.type === 'chart' && (
+               <Button variant="secondary" className="h-8 text-xs" onClick={() => downloadChartAsPng(chartId, item.title)}>
+                 <ImageIcon size={14} className="mr-2" /> Save as PNG
+               </Button>
+            )}
+            <Button variant="danger" className="h-8 text-xs" onClick={() => onDelete(item.id)}>
+              <Trash2 size={14} className="mr-1" /> Delete
+            </Button>
+            <div className="w-[1px] h-6 bg-gray-700 mx-1"></div>
+            <button onClick={onClose} className="text-gray-400 hover:text-white p-1.5 hover:bg-gray-700 rounded-full transition-colors"><X size={20} /></button>
+          </div>
+        </div>
+        
+        <div className="p-6 overflow-y-auto bg-[#1e1f20]">
+          {item.type === 'chart' ? (
+             <div className="h-[500px] w-full">
+               <ChartRenderer id={chartId} config={item.data as ChartConfig} data={data} className="w-full h-full" />
+             </div>
+          ) : (
+             <InsightView data={item.data as InsightData} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Component: Settings Modal
+const SettingsModal: React.FC<{ 
+  config: AIConfig, 
+  onSave: (cfg: AIConfig) => void, 
+  onClose: () => void 
+}> = ({ config, onSave, onClose }) => {
+  const [localConfig, setLocalConfig] = useState(config);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-[#202124] border border-gray-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-[#2a2b2e]">
+          <div className="flex items-center gap-2">
+            <Settings size={18} className="text-gray-300" />
+            <h2 className="text-sm font-bold text-white uppercase tracking-wide">AI Settings</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Provider Toggle */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-gray-400 uppercase">AI Provider</label>
+            <div className="flex bg-[#151618] p-1 rounded-lg border border-gray-700">
+              <button 
+                onClick={() => setLocalConfig({ ...localConfig, provider: 'gemini' })}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${localConfig.provider === 'gemini' ? 'bg-[#303134] text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                Google Gemini
+              </button>
+              <button 
+                onClick={() => setLocalConfig({ ...localConfig, provider: 'openrouter' })}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${localConfig.provider === 'openrouter' ? 'bg-[#303134] text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+              >
+                OpenRouter
+              </button>
+            </div>
+          </div>
+
+          {/* Gemini Info */}
+          {localConfig.provider === 'gemini' && (
+             <div className="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3">
+                <div className="flex gap-2 text-blue-300">
+                   <Sparkles size={16} className="mt-0.5" />
+                   <div className="text-xs leading-relaxed">
+                      Using built-in Google Gemini API. <br/>
+                      <span className="opacity-70">Fast, reliable, and supports Google Search grounding.</span>
+                   </div>
+                </div>
+             </div>
+          )}
+
+          {/* OpenRouter Fields */}
+          {localConfig.provider === 'openrouter' && (
+            <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
+               <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-400">OpenRouter API Key</label>
+                  <input 
+                    type="password" 
+                    className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                    placeholder="sk-or-..."
+                    value={localConfig.openRouterKey}
+                    onChange={(e) => setLocalConfig({...localConfig, openRouterKey: e.target.value})}
+                  />
+               </div>
+               <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-400">Model ID</label>
+                  <input 
+                    type="text" 
+                    className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600 font-mono"
+                    placeholder="google/gemini-2.0-flash-lite-preview-02-05:free"
+                    value={localConfig.openRouterModel}
+                    onChange={(e) => setLocalConfig({...localConfig, openRouterModel: e.target.value})}
+                  />
+                  <p className="text-[10px] text-gray-500">Examples: <code className="bg-black/30 px-1 rounded">google/gemini-2.0-flash-lite-preview-02-05:free</code>, <code className="bg-black/30 px-1 rounded">openrouter/sherlock-dash-alpha</code></p>
+               </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-gray-700 bg-[#2a2b2e] flex justify-end gap-2">
+           <Button variant="secondary" onClick={onClose}>Cancel</Button>
+           <Button variant="primary" onClick={() => { onSave(localConfig); onClose(); }}>Save Changes</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  // --- Yjs Collaboration State ---
+  const [doc] = useState(() => new Y.Doc());
+  const [provider, setProvider] = useState<WebrtcProvider | null>(null);
+  const [undoManager, setUndoManager] = useState<Y.UndoManager | null>(null);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connected'>('disconnected');
+  const [roomName, setRoomName] = useState('');
+
+  // --- App State (Synced via Yjs) ---
+  const [data, setData] = useState<RowData[]>([]);
+  const [columns, setColumns] = useState<string[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
+  
+  // Local-only state
+  const [filename, setFilename] = useState<string>("Untitled Project");
+  const [expandedGalleryItem, setExpandedGalleryItem] = useState<GalleryItem | null>(null);
+  const [inputMessage, setInputMessage] = useState("");
+  const [isThinking, setIsThinking] = useState(false);
+  const [showChat, setShowChat] = useState(true);
+  const [localUser, setLocalUser] = useState({ name: getRandomName(), color: getRandomColor() });
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Pending Action State (Local Only - Confirmation before broadcast)
+  const [pendingUpdate, setPendingUpdate] = useState<{ payload: RowData[], description: string } | null>(null);
+
+  // AI Settings State (Persisted in LocalStorage)
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
+    const saved = localStorage.getItem('lumina_ai_config');
+    return saved ? JSON.parse(saved) : { 
+      provider: 'gemini', 
+      openRouterKey: '', 
+      openRouterModel: 'google/gemini-2.0-flash-lite-preview-02-05:free' 
+    };
+  });
+
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Initialization ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const room = params.get('room') || 'lumina-main-room'; // Default room
+    setRoomName(room);
+    
+    // Initialize WebRTC Provider
+    const newProvider = new WebrtcProvider(room, doc, { signaling: ['wss://y-webrtc-signaling-eu.herokuapp.com', 'wss://signaling.yjs.dev'] });
+    setProvider(newProvider);
+
+    const yDataArray = doc.getArray('data');
+    const yColumnsArray = doc.getArray('columns');
+    const yChatArray = doc.getArray('chat');
+    const yGalleryArray = doc.getArray('gallery');
+
+    // Initialize Data if Empty (First user in room)
+    newProvider.on('synced', (synced: any) => {
+      if (synced && yDataArray.length === 0) {
+        doc.transact(() => {
+            // Populate with default data
+            DEFAULT_DATA.forEach(row => yDataArray.push([row]));
+            Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
+            yChatArray.push([{ 
+                id: 'welcome', 
+                role: 'model', 
+                text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.', 
+                timestamp: Date.now() 
+            }]);
+        });
+      }
+      setConnectionStatus('connected');
+    });
+
+    // Bind Yjs Types to React State
+    yDataArray.observe(() => setData(yDataArray.toArray() as RowData[]));
+    yColumnsArray.observe(() => setColumns(yColumnsArray.toArray() as string[]));
+    yChatArray.observe(() => setChatHistory(yChatArray.toArray() as ChatMessage[]));
+    yGalleryArray.observe(() => setGalleryItems(yGalleryArray.toArray() as GalleryItem[]));
+
+    // Initial State Sync
+    setData(yDataArray.toArray() as RowData[]);
+    setColumns(yColumnsArray.toArray() as string[]);
+    setChatHistory(yChatArray.toArray() as ChatMessage[]);
+    setGalleryItems(yGalleryArray.toArray() as GalleryItem[]);
+
+    // UndoManager
+    const um = new Y.UndoManager([yDataArray, yColumnsArray], {
+        trackedOrigins: new Set([doc.clientID, null]), // Track changes from local and others (optional, usually just local)
+    });
+    setUndoManager(um);
+
+    // Awareness (Presence)
+    newProvider.awareness.setLocalStateField('user', localUser);
+    
+    newProvider.awareness.on('change', () => {
+      const states = newProvider.awareness.getStates();
+      const activeUsers: Collaborator[] = [];
+      states.forEach((state: any, clientId: number) => {
+        if (state.user && clientId !== doc.clientID) {
+           activeUsers.push({
+             clientId,
+             name: state.user.name,
+             color: state.user.color,
+             selection: state.selection
+           });
+        }
+      });
+      setCollaborators(activeUsers);
+    });
+
+    return () => {
+      newProvider.disconnect();
+      newProvider.destroy();
+      doc.destroy();
+    };
+  }, []);
+
+  // Scroll Chat
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatHistory, showChat, pendingUpdate]);
+
+  // Save AI Config
+  useEffect(() => {
+    localStorage.setItem('lumina_ai_config', JSON.stringify(aiConfig));
+  }, [aiConfig]);
+
+  // --- Handlers (Update Yjs) ---
+
+  const updateData = (newData: RowData[], newColumns?: string[]) => {
+    doc.transact(() => {
+      const yDataArray = doc.getArray('data');
+      const yColumnsArray = doc.getArray('columns');
+      
+      // Update Columns if needed
+      if (newColumns) {
+          yColumnsArray.delete(0, yColumnsArray.length);
+          yColumnsArray.push(newColumns);
+      }
+
+      // Update Data (Full Replace strategy for simplicity with small datasets)
+      yDataArray.delete(0, yDataArray.length);
+      yDataArray.push(newData);
+    });
+  };
+
+  const updateSelection = (selection: { row: number, col: string } | null) => {
+      provider?.awareness.setLocalStateField('selection', selection);
+  };
+
+  const addChatMessage = (msg: ChatMessage) => {
+      doc.transact(() => {
+          doc.getArray('chat').push([msg]);
+      });
+  };
+
+  const addGalleryItem = (item: GalleryItem) => {
+      doc.transact(() => {
+          const arr = doc.getArray('gallery');
+          arr.insert(0, [item]); // Prepend
+      });
+  };
+
+  const deleteGalleryItem = (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this item? This will remove it for all collaborators.")) return;
+    
+    // If the deleted item is the one currently expanded, close the modal.
+    if (expandedGalleryItem?.id === id) {
+        setExpandedGalleryItem(null);
+    }
+
+    doc.transact(() => {
+      const arr = doc.getArray('gallery');
+      let indexToDelete = -1;
+      const items = arr.toArray() as GalleryItem[];
+      for(let i = 0; i < items.length; i++) {
+        if (items[i].id === id) {
+          indexToDelete = i;
+          break;
+        }
+      }
+      if (indexToDelete !== -1) {
+        arr.delete(indexToDelete, 1);
+      }
+    });
+  };
+
+  const handleUndo = () => {
+    undoManager?.undo();
+  };
+
+  const handleRedo = () => {
+    undoManager?.redo();
+  };
+
+  const handleDataUpdate = (newData: RowData[], newColumns?: string[]) => {
+    // Logic to merge columns if not provided
+    let finalCols = newColumns ? [...newColumns] : [...columns];
+    if (!newColumns && newData.length > 0) {
+      const allKeys = new Set<string>();
+      newData.forEach(row => {
+        if(row) Object.keys(row).forEach(k => allKeys.add(k));
+      });
+      const currentSet = new Set(columns);
+      const newKeys = Array.from(allKeys).filter(k => !currentSet.has(k));
+      finalCols = [...columns.filter(c => allKeys.has(c)), ...newKeys];
+    } else if (!newColumns && newData.length === 0) {
+      finalCols = columns;
+    }
+    updateData(newData, finalCols);
+  };
+
+  // Pending Action Handlers
+  const confirmPendingUpdate = () => {
+    if (pendingUpdate) {
+      handleDataUpdate(pendingUpdate.payload);
+      addChatMessage({
+        id: Date.now().toString(),
+        role: 'model',
+        text: '✅ Changes applied successfully.',
+        timestamp: Date.now()
+      });
+      setPendingUpdate(null);
+    }
+  };
+
+  const discardPendingUpdate = () => {
+    if (pendingUpdate) {
+      addChatMessage({
+        id: Date.now().toString(),
+        role: 'model',
+        text: '❌ Changes discarded.',
+        timestamp: Date.now()
+      });
+      setPendingUpdate(null);
+    }
+  };
+
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const parsedData = await parseExcelFile(file);
+      if (parsedData && parsedData.length > 0) {
+        updateData(parsedData, Object.keys(parsedData[0]));
+        setFilename(file.name.replace(/\.[^/.]+$/, ""));
+        addChatMessage({
+          id: Date.now().toString(),
+          role: 'model',
+          text: `Successfully imported ${file.name} with ${parsedData.length} rows.`,
+          timestamp: Date.now()
+        });
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error parsing Excel file.");
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim() || isThinking) return;
+
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: inputMessage,
+      timestamp: Date.now()
+    };
+
+    addChatMessage(userMsg);
+    setInputMessage("");
+    setIsThinking(true);
+
+    // Only send text history to AI to save tokens
+    const apiHistory = chatHistory.map(m => ({
+      role: m.role,
+      parts: [{ text: m.text }]
+    }));
+
+    // PASS AI CONFIG TO SERVICE
+    const response = await generateResponse(userMsg.text, data, columns, apiHistory, aiConfig);
+
+    setIsThinking(false);
+
+    const modelMsg: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'model',
+      text: response.text,
+      timestamp: Date.now(),
+      groundingUrls: response.groundingUrls
+    };
+
+    // Handle Actions
+    if (response.action === AIActionType.UPDATE_DATA && response.payload) {
+      // INTERCEPT UPDATE: Ask for confirmation
+      setPendingUpdate({
+        payload: response.payload,
+        description: response.text
+      });
+      // We don't add the success message yet, just the explanation
+      
+    } else if (response.action === AIActionType.CREATE_CHART && response.payload) {
+      modelMsg.chartConfig = response.payload;
+      addGalleryItem({
+        id: Date.now().toString(),
+        type: 'chart',
+        title: response.payload.title || 'New Chart',
+        timestamp: Date.now(),
+        data: response.payload
+      });
+
+    } else if (response.action === AIActionType.SHOW_INSIGHTS && response.payload) {
+      modelMsg.insightData = response.payload;
+      const item: GalleryItem = {
+        id: Date.now().toString(),
+        type: 'insight',
+        title: 'Analysis Result',
+        timestamp: Date.now(),
+        data: response.payload
+      };
+      addGalleryItem(item);
+      setExpandedGalleryItem(item);
+    }
+
+    addChatMessage(modelMsg);
+  };
+
+  const copyRoomLink = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', roomName);
+      navigator.clipboard.writeText(url.toString());
+      alert("Room link copied to clipboard!");
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-[#1e1f20] text-gray-200 font-sans overflow-hidden selection:bg-blue-500/30">
+      
+      {expandedGalleryItem && <GalleryModal item={expandedGalleryItem} data={data} onClose={() => setExpandedGalleryItem(null)} onDelete={deleteGalleryItem} />}
+      {showSettings && <SettingsModal config={aiConfig} onSave={setAiConfig} onClose={() => setShowSettings(false)} />}
+
+      {/* Header */}
+      <header className="flex items-center justify-between px-6 py-3 bg-[#202124] border-b border-gray-700 shadow-md z-30 relative shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 bg-blue-600 rounded-xl shadow-lg shadow-blue-900/40">
+            <FileSpreadsheet size={20} className="text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold text-white tracking-wide uppercase opacity-90">LuminaData <span className="text-blue-400 text-[10px] bg-blue-400/10 px-1.5 py-0.5 rounded ml-1">LIVE</span></h1>
+                <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-red-500 animate-pulse'}`}></div>
+            </div>
+            
+            <div className="flex items-center gap-2 mt-0.5">
+                <input 
+                value={filename} 
+                onChange={(e) => setFilename(e.target.value)}
+                className="bg-transparent text-xs text-gray-400 border-none focus:ring-0 p-0 hover:text-white w-32 transition-colors font-medium truncate"
+                />
+                <span className="text-[10px] text-gray-600 px-1">|</span>
+                <button onClick={copyRoomLink} className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-900/30 transition-colors">
+                    <LinkIcon size={10} /> {roomName}
+                </button>
+            </div>
+          </div>
+          
+          <div className="h-6 w-[1px] bg-gray-700 mx-2"></div>
+          <div className="flex items-center gap-1">
+            <Button variant="icon" onClick={handleUndo} title="Undo (Collaborative)">
+              <Undo2 size={18} />
+            </Button>
+            <Button variant="icon" onClick={handleRedo} title="Redo (Collaborative)">
+              <Redo2 size={18} />
+            </Button>
+          </div>
+          
+          {/* Collaborators */}
+          <div className="flex items-center -space-x-2 ml-2">
+              <div className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: localUser.color }} title={`You: ${localUser.name}`}>
+                  {localUser.name.charAt(0)}
+              </div>
+              {collaborators.slice(0, 3).map(c => (
+                   <div key={c.clientId} className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white relative group" style={{ backgroundColor: c.color }}>
+                      {c.name.charAt(0)}
+                      <div className="absolute bottom-full mb-1 hidden group-hover:block bg-black text-white text-[10px] px-1 rounded whitespace-nowrap">{c.name}</div>
+                   </div>
+              ))}
+              {collaborators.length > 3 && (
+                  <div className="w-8 h-8 rounded-full border-2 border-[#202124] bg-gray-600 flex items-center justify-center text-[10px] text-white">
+                      +{collaborators.length - 3}
+                  </div>
+              )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+           <input 
+             type="file" 
+             accept=".xlsx, .xls, .csv" 
+             ref={fileInputRef}
+             className="hidden"
+             onChange={handleFileUpload}
+           />
+           <Button variant="icon" onClick={() => setShowSettings(true)} title="AI Settings">
+             <Settings size={18} className={aiConfig.provider === 'openrouter' ? 'text-green-400' : ''} />
+           </Button>
+           <div className="h-6 w-[1px] bg-gray-700"></div>
+           <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+             <Upload size={16} className="mr-2" /> Import
+           </Button>
+           <Button variant="secondary" onClick={() => exportToExcel(data, filename)}>
+             <Download size={16} className="mr-2" /> Export
+           </Button>
+           <Button variant="secondary" onClick={() => exportAiSession(chatHistory, filename)}>
+             <Save size={16} className="mr-2" /> Save Chat
+           </Button>
+           <Button variant="icon" onClick={() => setShowChat(!showChat)} className={showChat ? 'text-blue-400 bg-blue-400/10' : ''}>
+             <MessageSquare size={20} />
+           </Button>
+        </div>
+      </header>
+
+      {/* Main Workspace */}
+      <main className="flex-1 flex overflow-hidden relative">
+        
+        {/* Left Section: Spreadsheet + Gallery Dock */}
+        <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${showChat ? 'mr-96' : ''}`}>
+          
+          {/* Spreadsheet Container */}
+          <div className="flex-1 p-4 pb-0 min-h-0 relative">
+            <div className="h-full flex flex-col rounded-t-xl overflow-hidden border border-gray-700 shadow-2xl bg-[#202124]">
+              <Spreadsheet 
+                  data={data} 
+                  columns={columns} 
+                  onUpdate={handleDataUpdate}
+                  onSelectionChange={updateSelection}
+                  collaborators={collaborators} 
+              />
+            </div>
+          </div>
+
+          {/* Bottom Gallery Dock */}
+          <div className="h-56 bg-[#1a1b1e] border-t border-gray-700 flex flex-col shrink-0 relative z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
+            <div className="px-4 py-2 bg-[#252629] border-b border-gray-700 flex items-center justify-between select-none">
+              <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
+                <Terminal size={14} />
+                <span className="font-bold tracking-wider">SHARED_VISUAL_GALLERY</span>
+                <span className="animate-pulse inline-block w-1.5 h-3 bg-blue-500 ml-1"></span>
+              </div>
+              <span className="text-[10px] text-gray-600 uppercase">{galleryItems.length} Items Generated</span>
+            </div>
+
+            <div className="flex-1 overflow-x-auto p-4 flex items-center gap-4 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+               {galleryItems.length === 0 ? (
+                 <div className="w-full flex flex-col items-center justify-center text-gray-600 gap-2 opacity-50">
+                    <BarChart3 size={32} />
+                    <p className="text-xs font-mono">Ask AI to create charts. They will appear here for everyone.</p>
+                 </div>
+               ) : (
+                 galleryItems.map((item) => (
+                   <div 
+                      key={item.id} 
+                      onClick={() => setExpandedGalleryItem(item)}
+                      className="min-w-[220px] w-[220px] h-[140px] bg-[#202124] border border-gray-700 hover:border-blue-500/50 rounded-lg cursor-pointer relative group transition-all hover:scale-105 hover:shadow-xl flex flex-col overflow-hidden"
+                   >
+                      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <button 
+                          className="p-1 bg-red-500/80 hover:bg-red-600 rounded text-white"
+                          onClick={(e) => { e.stopPropagation(); deleteGalleryItem(item.id); }}
+                          title="Delete for everyone"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                        <button className="p-1 bg-black/50 hover:bg-blue-600 rounded text-white">
+                          <Maximize2 size={12} />
+                        </button>
+                      </div>
+                      
+                      <div className="px-3 py-2 border-b border-gray-800 bg-[#252629] flex items-center gap-2">
+                        {item.type === 'chart' ? <BarChart3 size={12} className="text-purple-400" /> : <Lightbulb size={12} className="text-blue-400" />}
+                        <span className="text-[10px] font-medium text-gray-300 truncate w-full">{item.title}</span>
+                      </div>
+
+                      <div className="flex-1 p-2 overflow-hidden relative">
+                        {item.type === 'chart' ? (
+                           <div className="pointer-events-none transform scale-50 origin-top-left w-[200%] h-[200%]">
+                              <ChartRenderer config={item.data as ChartConfig} data={data} />
+                           </div>
+                        ) : (
+                          <div className="text-[10px] text-gray-400 leading-relaxed line-clamp-4 p-1">
+                            {(item.data as InsightData).summary}
+                          </div>
+                        )}
+                      </div>
+                   </div>
+                 ))
+               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Chat Sidebar */}
+        <div 
+          className={`fixed inset-y-0 right-0 w-96 bg-[#28292c] border-l border-gray-700 shadow-2xl flex flex-col z-30 mt-[61px] transform transition-transform duration-300 ease-cubic ${showChat ? 'translate-x-0' : 'translate-x-full'}`}
+        >
+          <div className="p-4 border-b border-gray-700 flex items-center justify-between bg-[#2d2e31] shadow-sm shrink-0">
+             <div className="flex items-center gap-2 text-blue-400 font-medium">
+               <Sparkles size={18} className="animate-pulse" />
+               <span>Group AI Assistant</span>
+               {aiConfig.provider === 'openrouter' && <span className="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-900">OPENROUTER</span>}
+             </div>
+             <button onClick={() => setShowChat(false)} className="text-gray-500 hover:text-gray-300 transition-colors">
+               <X size={18} />
+             </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={chatScrollRef}>
+            {chatHistory.map((msg) => (
+              <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div 
+                  className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-md relative group ${
+                    msg.role === 'user' 
+                      ? 'bg-blue-600 text-white rounded-br-none' 
+                      : 'bg-[#3c4043] text-gray-100 rounded-bl-none border border-gray-600'
+                  }`}
+                >
+                  <div className="whitespace-pre-wrap">
+                    {msg.text.split('\n').map((line, i) => (
+                      <p key={i} className="mb-1 min-h-[1em]">{line}</p>
+                    ))}
+                  </div>
+
+                  {msg.groundingUrls && msg.groundingUrls.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-white/10">
+                      <div className="flex flex-wrap gap-2">
+                        {msg.groundingUrls.slice(0, 3).map((url, idx) => (
+                          <a 
+                            key={idx} 
+                            href={url.uri} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-[10px] bg-black/20 hover:bg-black/40 px-2 py-1 rounded text-blue-200 truncate max-w-[140px] transition-colors"
+                          >
+                            {url.title}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <span className="text-[10px] text-gray-600 mt-1 px-1 select-none">
+                  {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                </span>
+              </div>
+            ))}
+            
+            {/* Pending Update Confirmation Card */}
+            {pendingUpdate && (
+               <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-4 shadow-lg mx-1">
+                  <div className="flex items-start gap-3 mb-3">
+                     <AlertTriangle size={20} className="text-yellow-500 shrink-0 mt-0.5" />
+                     <div>
+                       <h4 className="text-sm font-bold text-yellow-200">Review Data Changes</h4>
+                       <p className="text-xs text-gray-400 mt-1">The AI has prepared a data update. This will modify the spreadsheet for everyone.</p>
+                     </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                     <Button variant="danger" className="h-8 text-xs" onClick={discardPendingUpdate}>
+                        Discard
+                     </Button>
+                     <Button variant="success" className="h-8 text-xs" onClick={confirmPendingUpdate}>
+                        <CheckCircle2 size={14} className="mr-1" /> Apply Changes
+                     </Button>
+                  </div>
+               </div>
+            )}
+
+            {isThinking && (
+              <div className="flex items-center gap-3 text-gray-500 text-sm p-2">
+                <div className="flex space-x-1">
+                   <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                   <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                   <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                </div>
+                <span className="text-xs">Lumina is processing...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Input Area */}
+          <div className="p-4 bg-[#2d2e31] border-t border-gray-700 shrink-0">
+            <div className="relative flex items-center group">
+              <input 
+                type="text"
+                className="w-full bg-[#202124] text-white rounded-xl pl-4 pr-12 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 border border-gray-600 group-hover:border-gray-500 transition-colors placeholder-gray-500 text-sm"
+                placeholder={aiConfig.provider === 'openrouter' ? `Ask ${aiConfig.openRouterModel.split('/').pop()}...` : "Ask Lumina (Gemini)..."}
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !pendingUpdate && handleSendMessage()}
+                disabled={isThinking || !!pendingUpdate}
+              />
+              <button 
+                onClick={handleSendMessage}
+                disabled={!inputMessage.trim() || isThinking || !!pendingUpdate}
+                className="absolute right-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-0 disabled:scale-90 transition-all duration-200"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+            {pendingUpdate && <p className="text-[10px] text-center text-yellow-500/70 mt-2">Please confirm changes before sending new messages.</p>}
+          </div>
+
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default App;

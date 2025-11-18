@@ -1,0 +1,5 @@
+{
+  "name": "LuminaData - AI Spreadsheet",
+  "description": "A professional, dark-themed Excel-compatible visualizer and editor powered by Gemini AI. Import data, ask questions, generate charts, and leverage web search for insights.",
+  "requestFramePermissions": []
+}
