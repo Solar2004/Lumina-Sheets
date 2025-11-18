@@ -347,8 +347,19 @@ function App() {
     const room = params.get('room') || 'lumina-main-room'; // Default room
     setRoomName(room);
     
-    // Initialize WebRTC Provider
-    const newProvider = new WebrtcProvider(room, doc, { signaling: ['wss://y-webrtc-signaling-eu.herokuapp.com', 'wss://signaling.yjs.dev'] });
+    // Initialize WebRTC Provider with robust public servers
+    const newProvider = new WebrtcProvider(room, doc, {
+      // Use the reliable public signaling server
+      signaling: ['wss://signaling.yjs.dev'],
+      // Add STUN servers to facilitate peer-to-peer connections without a TURN server
+      peerOpts: {
+        config: {
+          iceServers: [
+            { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+          ]
+        }
+      }
+    });
     setProvider(newProvider);
 
     const yDataArray = doc.getArray('data');
@@ -633,11 +644,73 @@ function App() {
     addChatMessage(modelMsg);
   };
 
-  const copyRoomLink = () => {
+  const copyRoomLink = async () => {
       const url = new URL(window.location.href);
-      url.searchParams.set('room', roomName);
-      navigator.clipboard.writeText(url.toString());
-      alert("Room link copied to clipboard!");
+      
+      // Force the room parameter into the URL if not present
+      if (!url.searchParams.has('room')) {
+          url.searchParams.set('room', roomName);
+          // Update the browser's address bar without reloading
+          window.history.pushState({}, '', url.toString());
+      }
+      
+      const link = url.toString();
+      
+      const showSuccess = () => {
+          const btn = document.getElementById('room-share-btn');
+          if(btn) {
+             // Store original HTML only if not already stored to avoid overwriting with "Copied!"
+             if (!btn.dataset.originalHtml) {
+                 btn.dataset.originalHtml = btn.innerHTML;
+             }
+             
+             btn.innerHTML = '<span class="text-green-400 font-bold">Copied!</span>';
+             
+             // Reset after timeout
+             setTimeout(() => {
+                 if (btn.dataset.originalHtml) {
+                     btn.innerHTML = btn.dataset.originalHtml;
+                 }
+             }, 2000);
+          } else {
+             alert("Room link copied to clipboard!");
+          }
+      };
+
+      try {
+          await navigator.clipboard.writeText(link);
+          showSuccess();
+      } catch (err) {
+          console.warn("Clipboard API failed, attempting fallback...", err);
+          
+          // Fallback: Create hidden textarea
+          const textArea = document.createElement("textarea");
+          textArea.value = link;
+          
+          // Make it invisible but part of the DOM
+          textArea.style.top = "0";
+          textArea.style.left = "0";
+          textArea.style.position = "fixed";
+          textArea.style.opacity = "0";
+
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          
+          try {
+              const successful = document.execCommand('copy');
+              document.body.removeChild(textArea);
+              if(successful) {
+                  showSuccess();
+              } else {
+                  throw new Error("Fallback copy failed");
+              }
+          } catch (fallbackErr) {
+              document.body.removeChild(textArea);
+              console.error("Copy failed", fallbackErr);
+              prompt("Could not copy automatically. Please copy this link:", link);
+          }
+      }
   };
 
   return (
@@ -665,7 +738,12 @@ function App() {
                 className="bg-transparent text-xs text-gray-400 border-none focus:ring-0 p-0 hover:text-white w-32 transition-colors font-medium truncate"
                 />
                 <span className="text-[10px] text-gray-600 px-1">|</span>
-                <button onClick={copyRoomLink} className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-900/30 transition-colors">
+                <button 
+                  id="room-share-btn"
+                  onClick={copyRoomLink} 
+                  className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-900/30 transition-colors min-w-[80px] justify-center"
+                  title="Click to copy invite link"
+                >
                     <LinkIcon size={10} /> {roomName}
                 </button>
             </div>
