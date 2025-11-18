@@ -138,8 +138,8 @@ const InsightView: React.FC<{ data: InsightData }> = ({ data }) => (
             <div className="flex items-end gap-2">
               <span className="text-2xl font-bold text-white tracking-tight truncate">{stat.value}</span>
               <div className={`flex items-center text-[10px] font-bold mb-1.5 px-1 py-0.5 rounded ${stat.trend === 'up' ? 'bg-green-500/20 text-green-400' :
-                  stat.trend === 'down' ? 'bg-red-500/20 text-red-400' :
-                    'bg-gray-500/20 text-gray-400'
+                stat.trend === 'down' ? 'bg-red-500/20 text-red-400' :
+                  'bg-gray-500/20 text-gray-400'
                 }`}>
                 {stat.trend === 'up' && <TrendingUp size={10} className="mr-1" />}
                 {stat.trend === 'down' && <TrendingDown size={10} className="mr-1" />}
@@ -342,91 +342,165 @@ function App() {
 
   // --- Initialization ---
   useEffect(() => {
+    console.log('🚀 [LUMINA] Initializing collaboration system...');
+
+    // Log environment variables (masked password for security)
+    const signalingServer = import.meta.env.VITE_SIGNALING_SERVER || 'wss://signaling-server.solar2004.deno.net';
+    const signalingPassword = import.meta.env.VITE_SIGNALING_PASSWORD || 'lorianthelaw1469';
+
+    console.log('📡 [CONFIG] Signaling Server:', signalingServer);
+    console.log('🔑 [CONFIG] Password Set:', signalingPassword ? `Yes (${signalingPassword.substring(0, 3)}***${signalingPassword.substring(signalingPassword.length - 3)})` : 'No');
+    console.log('🌍 [ENV] import.meta.env.VITE_SIGNALING_SERVER:', import.meta.env.VITE_SIGNALING_SERVER);
+    console.log('🌍 [ENV] import.meta.env.VITE_SIGNALING_PASSWORD:', import.meta.env.VITE_SIGNALING_PASSWORD ? 'SET' : 'NOT SET');
+    console.log('🌍 [ENV] MODE:', import.meta.env.MODE);
+    console.log('🌍 [ENV] DEV:', import.meta.env.DEV);
+    console.log('🌍 [ENV] PROD:', import.meta.env.PROD);
+
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room') || 'lumina-main-room'; // Default room
     setRoomName(room);
+    console.log('🏠 [ROOM] Room Name:', room);
 
-    // Initialize WebRTC Provider with custom signaling server
-    const newProvider = new WebrtcProvider(room, doc, {
-      // Use secure signaling server with password authentication from environment variables
-      signaling: [import.meta.env.VITE_SIGNALING_SERVER || 'wss://signaling-server.solar2004.deno.net'],
-      password: import.meta.env.VITE_SIGNALING_PASSWORD || 'lorianthelaw1469',
-      // Add STUN servers to facilitate peer-to-peer connections without a TURN server
-      peerOpts: {
-        config: {
-          iceServers: [
-            { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
-          ]
-        }
-      }
-    });
-    setProvider(newProvider);
+    try {
+      console.log('🔌 [WEBRTC] Creating WebrtcProvider...');
 
-    const yDataArray = doc.getArray('data');
-    const yColumnsArray = doc.getArray('columns');
-    const yChatArray = doc.getArray('chat');
-    const yGalleryArray = doc.getArray('gallery');
-
-    // Initialize Data if Empty (First user in room)
-    newProvider.on('synced', (synced: any) => {
-      if (synced && yDataArray.length === 0) {
-        doc.transact(() => {
-          // Populate with default data
-          DEFAULT_DATA.forEach(row => yDataArray.push([row]));
-          Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
-          yChatArray.push([{
-            id: 'welcome',
-            role: 'model',
-            text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
-            timestamp: Date.now()
-          }]);
-        });
-      }
-      setConnectionStatus('connected');
-    });
-
-    // Bind Yjs Types to React State
-    yDataArray.observe(() => setData(yDataArray.toArray() as RowData[]));
-    yColumnsArray.observe(() => setColumns(yColumnsArray.toArray() as string[]));
-    yChatArray.observe(() => setChatHistory(yChatArray.toArray() as ChatMessage[]));
-    yGalleryArray.observe(() => setGalleryItems(yGalleryArray.toArray() as GalleryItem[]));
-
-    // Initial State Sync
-    setData(yDataArray.toArray() as RowData[]);
-    setColumns(yColumnsArray.toArray() as string[]);
-    setChatHistory(yChatArray.toArray() as ChatMessage[]);
-    setGalleryItems(yGalleryArray.toArray() as GalleryItem[]);
-
-    // UndoManager
-    const um = new Y.UndoManager([yDataArray, yColumnsArray], {
-      trackedOrigins: new Set([doc.clientID, null]), // Track changes from local and others (optional, usually just local)
-    });
-    setUndoManager(um);
-
-    // Awareness (Presence)
-    newProvider.awareness.setLocalStateField('user', localUser);
-
-    newProvider.awareness.on('change', () => {
-      const states = newProvider.awareness.getStates();
-      const activeUsers: Collaborator[] = [];
-      states.forEach((state: any, clientId: number) => {
-        if (state.user && clientId !== doc.clientID) {
-          activeUsers.push({
-            clientId,
-            name: state.user.name,
-            color: state.user.color,
-            selection: state.selection
-          });
+      // Initialize WebRTC Provider with custom signaling server
+      const newProvider = new WebrtcProvider(room, doc, {
+        // Use secure signaling server with password authentication from environment variables
+        signaling: [signalingServer],
+        password: signalingPassword,
+        // Add STUN servers to facilitate peer-to-peer connections without a TURN server
+        peerOpts: {
+          config: {
+            iceServers: [
+              { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+            ]
+          }
         }
       });
-      setCollaborators(activeUsers);
-    });
 
-    return () => {
-      newProvider.disconnect();
-      newProvider.destroy();
-      doc.destroy();
-    };
+      console.log('✅ [WEBRTC] WebrtcProvider created successfully');
+      console.log('📊 [WEBRTC] Provider details:', {
+        roomName: room,
+        signalingUrls: [signalingServer],
+        hasPassword: !!signalingPassword
+      });
+
+      setProvider(newProvider);
+
+      const yDataArray = doc.getArray('data');
+      const yColumnsArray = doc.getArray('columns');
+      const yChatArray = doc.getArray('chat');
+      const yGalleryArray = doc.getArray('gallery');
+
+      // Listen to connection events
+      console.log('👂 [WEBRTC] Setting up event listeners...');
+
+      // Monitor signaling connection status
+      if (newProvider.signalingConns) {
+        newProvider.signalingConns.forEach((conn, index) => {
+          console.log(`🔗 [SIGNALING ${index}] Attempting connection to:`, signalingServer);
+
+          conn.on('connect', () => {
+            console.log(`✅ [SIGNALING ${index}] Connected successfully!`);
+          });
+
+          conn.on('disconnect', () => {
+            console.warn(`⚠️ [SIGNALING ${index}] Disconnected`);
+          });
+
+          conn.on('error', (error: any) => {
+            console.error(`❌ [SIGNALING ${index}] Error:`, error);
+          });
+        });
+      }
+
+      // Initialize Data if Empty (First user in room)
+      newProvider.on('synced', (synced: any) => {
+        console.log('🔄 [SYNC] Sync event fired, synced:', synced);
+
+        if (synced && yDataArray.length === 0) {
+          console.log('📝 [SYNC] First user in room - populating default data');
+          doc.transact(() => {
+            // Populate with default data
+            DEFAULT_DATA.forEach(row => yDataArray.push([row]));
+            Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
+            yChatArray.push([{
+              id: 'welcome',
+              role: 'model',
+              text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
+              timestamp: Date.now()
+            }]);
+          });
+          console.log('✅ [SYNC] Default data populated');
+        } else {
+          console.log('📊 [SYNC] Data already exists, rows:', yDataArray.length);
+        }
+
+        setConnectionStatus('connected');
+        console.log('🟢 [STATUS] Connection status set to: connected');
+      });
+
+      // Bind Yjs Types to React State
+      yDataArray.observe(() => setData(yDataArray.toArray() as RowData[]));
+      yColumnsArray.observe(() => setColumns(yColumnsArray.toArray() as string[]));
+      yChatArray.observe(() => setChatHistory(yChatArray.toArray() as ChatMessage[]));
+      yGalleryArray.observe(() => setGalleryItems(yGalleryArray.toArray() as GalleryItem[]));
+
+      // Initial State Sync
+      setData(yDataArray.toArray() as RowData[]);
+      setColumns(yColumnsArray.toArray() as string[]);
+      setChatHistory(yChatArray.toArray() as ChatMessage[]);
+      setGalleryItems(yGalleryArray.toArray() as GalleryItem[]);
+
+      console.log('📚 [DATA] Initial state loaded:', {
+        rows: yDataArray.length,
+        columns: yColumnsArray.length,
+        chatMessages: yChatArray.length,
+        galleryItems: yGalleryArray.length
+      });
+
+      // UndoManager
+      const um = new Y.UndoManager([yDataArray, yColumnsArray], {
+        trackedOrigins: new Set([doc.clientID, null]), // Track changes from local and others (optional, usually just local)
+      });
+      setUndoManager(um);
+
+      // Awareness (Presence)
+      newProvider.awareness.setLocalStateField('user', localUser);
+      console.log('👤 [PRESENCE] Local user set:', localUser.name);
+
+      newProvider.awareness.on('change', () => {
+        const states = newProvider.awareness.getStates();
+        const activeUsers: Collaborator[] = [];
+        states.forEach((state: any, clientId: number) => {
+          if (state.user && clientId !== doc.clientID) {
+            activeUsers.push({
+              clientId,
+              name: state.user.name,
+              color: state.user.color,
+              selection: state.selection
+            });
+          }
+        });
+        setCollaborators(activeUsers);
+        console.log('👥 [PRESENCE] Active collaborators:', activeUsers.length, activeUsers.map(u => u.name));
+      });
+
+      console.log('✅ [LUMINA] Initialization complete!');
+
+      return () => {
+        console.log('🔌 [CLEANUP] Disconnecting provider...');
+        newProvider.disconnect();
+        newProvider.destroy();
+        doc.destroy();
+        console.log('✅ [CLEANUP] Cleanup complete');
+      };
+    } catch (error) {
+      console.error('💥 [ERROR] Fatal error during initialization:', error);
+      console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace available');
+      setConnectionStatus('disconnected');
+    }
   }, []);
 
   // Scroll Chat
@@ -904,8 +978,8 @@ function App() {
               <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <div
                   className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-md relative group ${msg.role === 'user'
-                      ? 'bg-blue-600 text-white rounded-br-none'
-                      : 'bg-[#3c4043] text-gray-100 rounded-bl-none border border-gray-600'
+                    ? 'bg-blue-600 text-white rounded-br-none'
+                    : 'bg-[#3c4043] text-gray-100 rounded-bl-none border border-gray-600'
                     }`}
                 >
                   <div className="whitespace-pre-wrap">
