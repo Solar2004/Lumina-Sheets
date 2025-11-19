@@ -780,29 +780,43 @@ function App() {
       yDataArray.observe((event) => {
         setData(yDataArray.toArray() as RowData[]);
 
-        // Create notification for remote changes only
+        // Create notification for remote changes only AND when there are collaborators
         if (event.transaction.origin !== doc.clientID) {
-          const currentUser = collaborators.find(c => c.clientId === event.transaction.origin);
-          const userName = currentUser?.name || 'Someone';
+          // Get user name from awareness
+          const states = newProvider.awareness.getStates();
+          let userName = 'Someone';
+          let hasCollaborators = false;
 
-          if (yDataArray.length > lastDataLength) {
-            addNotification({
-              type: 'data',
-              user: userName,
-              message: `added ${yDataArray.length - lastDataLength} row(s)`
-            });
-          } else if (yDataArray.length < lastDataLength) {
-            addNotification({
-              type: 'data',
-              user: userName,
-              message: `deleted ${lastDataLength - yDataArray.length} row(s)`
-            });
-          } else {
-            addNotification({
-              type: 'data',
-              user: userName,
-              message: 'updated the spreadsheet'
-            });
+          states.forEach((state: any, clientId: number) => {
+            if (clientId !== doc.clientID && state.user) {
+              hasCollaborators = true;
+              if (clientId === event.transaction.origin) {
+                userName = state.user.name;
+              }
+            }
+          });
+
+          // Only show notification if there are other users
+          if (hasCollaborators) {
+            if (yDataArray.length > lastDataLength) {
+              addNotification({
+                type: 'data',
+                user: userName,
+                message: `added ${yDataArray.length - lastDataLength} row(s)`
+              });
+            } else if (yDataArray.length < lastDataLength) {
+              addNotification({
+                type: 'data',
+                user: userName,
+                message: `deleted ${lastDataLength - yDataArray.length} row(s)`
+              });
+            } else {
+              addNotification({
+                type: 'data',
+                user: userName,
+                message: 'updated the spreadsheet'
+              });
+            }
           }
         }
         lastDataLength = yDataArray.length;
@@ -813,16 +827,32 @@ function App() {
       yChatArray.observe((event) => {
         setChatHistory(yChatArray.toArray() as ChatMessage[]);
 
-        // Notification for new chat messages (from others)
+        // Notification for new chat messages (from others) AND when there are collaborators
         if (event.transaction.origin !== doc.clientID && yChatArray.length > lastChatLength) {
-          const messages = yChatArray.toArray() as ChatMessage[];
-          const lastMessage = messages[messages.length - 1];
-          if (lastMessage.role === 'user') {
-            addNotification({
-              type: 'chat',
-              user: 'Collaborator',
-              message: `sent a message: "${lastMessage.text.substring(0, 30)}..."`
-            });
+          // Check if there are collaborators
+          const states = newProvider.awareness.getStates();
+          let hasCollaborators = false;
+          let userName = 'Collaborator';
+
+          states.forEach((state: any, clientId: number) => {
+            if (clientId !== doc.clientID && state.user) {
+              hasCollaborators = true;
+              if (clientId === event.transaction.origin) {
+                userName = state.user.name;
+              }
+            }
+          });
+
+          if (hasCollaborators) {
+            const messages = yChatArray.toArray() as ChatMessage[];
+            const lastMessage = messages[messages.length - 1];
+            if (lastMessage.role === 'user') {
+              addNotification({
+                type: 'chat',
+                user: userName,
+                message: `sent a message: "${lastMessage.text.substring(0, 30)}..."`
+              });
+            }
           }
         }
         lastChatLength = yChatArray.length;
@@ -980,6 +1010,25 @@ function App() {
     const key = `lumina_gallery_${roomName}`;
     localStorage.setItem(key, JSON.stringify(galleryItems));
   }, [galleryItems, roomName]);
+
+  // Persist filename to localStorage (per room)
+  useEffect(() => {
+    if (!roomName) return;
+    const key = `lumina_filename_${roomName}`;
+    localStorage.setItem(key, filename);
+  }, [filename, roomName]);
+
+  // Load filename from localStorage on room change
+  useEffect(() => {
+    if (!roomName) return;
+    const key = `lumina_filename_${roomName}`;
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      setFilename(saved);
+    } else {
+      setFilename("Untitled Project");
+    }
+  }, [roomName]);
 
   // Scroll Chat
   useEffect(() => {
