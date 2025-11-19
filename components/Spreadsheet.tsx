@@ -69,6 +69,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
 
   // Selection State
   const [selectedCell, setSelectedCell] = useState<{ row: number, col: string } | null>(null);
+  const [selectedRange, setSelectedRange] = useState<{
+    startRow: number;
+    endRow: number;
+    col: string;
+  } | null>(null);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [selectedColumn, setSelectedColumn] = useState<string | null>(null);
 
@@ -259,17 +264,35 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
   };
 
   // --- Editing ---
-  const handleCellClick = (rowIndex: number, colKey: string, value: CellValue) => {
-    if (editCell?.row === rowIndex && editCell?.col === colKey) return;
+  const handleCellClick = (rowIndex: number, colKey: string, e?: React.MouseEvent) => {
+    // Handle multi-select with Shift or Ctrl
+    if (e?.shiftKey && selectedCell && selectedCell.col === colKey) {
+      // Shift click - select range from last selected to this one
+      const startRow = Math.min(selectedCell.row, rowIndex);
+      const endRow = Math.max(selectedCell.row, rowIndex);
+      setSelectedRange({ startRow, endRow, col: colKey });
+      setSelectedRowIndex(null);
+      setSelectedColumn(null);
+      return;
+    }
+
+    // Normal click - select single cell
     const sel = { row: rowIndex, col: colKey };
     setSelectedCell(sel);
+    setSelectedRange(null); // Clear range selection
     setSelectedRowIndex(null);
     setSelectedColumn(null);
+    // Don't enter edit mode on single click
+    if (onSelectionChange) onSelectionChange(sel);
+  };
 
+  const handleCellDoubleClick = (rowIndex: number, colKey: string, value: CellValue) => {
+    // Enter edit mode on double click
+    const sel = { row: rowIndex, col: colKey };
     setEditCell(sel);
     setTempValue(value === null || value === undefined ? '' : String(value));
-
-    if (onSelectionChange) onSelectionChange(sel);
+    // Clear range selection when editing
+    setSelectedRange(null);
   };
 
   const handleRowHeaderClick = (rowIndex: number) => {
@@ -461,18 +484,17 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
         const sourceValues: CellValue[] = [];
 
         if (direction === 'down' || direction === 'up') {
-          // Vertical fill - get column values
-          const minRow = Math.min(rowIndex, targetRow);
-          const maxRow = Math.max(rowIndex, targetRow);
-          for (let i = minRow; i <= rowIndex; i++) {
-            sourceValues.push(sortedData[i]?.[col] || null);
+          // Vertical fill - get values from selected range or single cell
+          if (selectedRange && selectedRange.col === col) {
+            for (let i = selectedRange.startRow; i <= selectedRange.endRow; i++) {
+              sourceValues.push(sortedData[i]?.[col] || null);
+            }
+          } else {
+            sourceValues.push(sortedData[rowIndex]?.[col] || null);
           }
         } else {
-          // Horizontal fill - get row values
-          const minCol = Math.min(colIndex, targetCol);
-          for (let i = minCol; i <= colIndex; i++) {
-            sourceValues.push(sortedData[rowIndex]?.[columns[i]] || null);
-          }
+          // Horizontal fill - get value from start cell
+          sourceValues.push(sortedData[rowIndex]?.[col] || null);
         }
 
         const pattern = detectPattern(sourceValues);
@@ -519,19 +541,25 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
       const minRow = isDown ? startRow : endRow;
       const maxRow = isDown ? endRow : startRow;
 
-      // Get source values
+      // Get source values from selected range or single cell
       const sourceValues: CellValue[] = [];
-      for (let i = minRow; i <= startRow; i++) {
-        sourceValues.push(sortedData[i]?.[col] || null);
+      if (selectedRange && selectedRange.col === col) {
+        for (let i = selectedRange.startRow; i <= selectedRange.endRow; i++) {
+          sourceValues.push(sortedData[i]?.[col] || null);
+        }
+      } else {
+        sourceValues.push(sortedData[startRow]?.[col] || null);
       }
 
       // Generate fill values
-      const count = Math.abs(endRow - startRow);
-      const fillValues = generateFillValues(sourceValues, direction, count, { row: startRow, col: startCol });
+      const fillStart = selectedRange ? selectedRange.endRow : startRow;
+      const count = Math.abs(endRow - fillStart);
+      const fillValues = generateFillValues(sourceValues, direction, count, { row: fillStart, col: startCol });
 
       // Apply values
+      const actualStartRow = selectedRange ? selectedRange.endRow : startRow;
       for (let i = 0; i < count; i++) {
-        const targetRow = isDown ? startRow + i + 1 : startRow - i - 1;
+        const targetRow = isDown ? actualStartRow + i + 1 : actualStartRow - i - 1;
 
         if (targetRow >= 0 && targetRow < sortedData.length) {
           const visualRow = sortedData[targetRow];
@@ -816,6 +844,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                     // Collaborator cursor check
                     const remoteUser = collaborators.find(u => u.selection?.row === rowIndex && u.selection?.col === col);
 
+                    // Check if in selected range
+                    const isInSelectedRange = selectedRange &&
+                      col === selectedRange.col &&
+                      rowIndex >= selectedRange.startRow &&
+                      rowIndex <= selectedRange.endRow;
+
                     // Check if this cell is in drag range
                     const isInDragRange = dragRange &&
                       colIndex >= Math.min(dragRange.startCol, dragRange.endCol) &&
@@ -827,6 +861,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                     let bgClass = '';
                     if (isSelected) {
                       bgClass = 'bg-blue-600/20 outline outline-2 outline-blue-500 -outline-offset-2 z-10';
+                    } else if (isInSelectedRange) {
+                      bgClass = 'bg-blue-600/10 outline outline-1 outline-blue-400 -outline-offset-1';
                     } else if (isInDragRange) {
                       bgClass = 'bg-blue-500/10 outline outline-2 outline-dashed outline-blue-400/60 -outline-offset-2';
                     } else if (remoteUser) {
@@ -843,14 +879,15 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                         data-col-index={colIndex}
                         key={`${rowIndex}-${col}`}
                         className={`
-                        px-2 py-1.5 text-sm border-r border-b border-gray-800 relative cursor-text
+                        px-2 py-1.5 text-sm border-r border-b border-gray-800 relative cursor-pointer
                         ${bgClass}
                         ${isEditing ? 'p-0' : ''}
                         ${isNum ? 'text-right font-mono' : 'text-left'}
                         ${isNegative ? 'text-red-400' : hasError ? 'text-red-300' : 'text-gray-300'}
                         ${isFormulaCell && !hasError ? 'bg-purple-900/10' : ''}
                       `}
-                        onClick={() => handleCellClick(rowIndex, col, value)}
+                        onClick={(e) => handleCellClick(rowIndex, col, e)}
+                        onDoubleClick={() => handleCellDoubleClick(rowIndex, col, value)}
                         style={{
                           width: colWidths[col] || 150,
                           maxWidth: colWidths[col] || 150,
@@ -915,7 +952,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                         )}
 
                         {/* Drag-to-Fill Handle */}
-                        {isSelected && !isEditing && (
+                        {((isSelected && !isEditing) || (isInSelectedRange && rowIndex === (selectedRange?.endRow || 0) && !isEditing)) && (
                           <div
                             className="absolute bottom-0 right-0 w-2 h-2 bg-blue-500 cursor-crosshair hover:w-2.5 hover:h-2.5 rounded-sm z-50 transition-all border border-white shadow-sm"
                             onMouseDown={(e) => handleFillHandleMouseDown(e, rowIndex, col)}
