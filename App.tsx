@@ -688,39 +688,52 @@ function App() {
         });
       }
 
-      // Initialize Data if Empty (First user in room) - FIXED: Use atomic flag
+      // Initialize Data - Works for both single and multi-user scenarios
+      const initializeDataIfNeeded = () => {
+        const hasBeenInitialized = yMeta.get('initialized');
+
+        if (!hasBeenInitialized && yDataArray.length === 0) {
+          console.log('📝 [INIT] Initializing default data...');
+          doc.transact(() => {
+            // Set flag atomically WITHIN the transaction
+            yMeta.set('initialized', true);
+
+            // Populate with default data
+            DEFAULT_DATA.forEach(row => yDataArray.push([row]));
+            Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
+            yChatArray.push([{
+              id: 'welcome',
+              role: 'model',
+              text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
+              timestamp: Date.now()
+            }]);
+          });
+          console.log('✅ [INIT] Default data populated');
+          setConnectionStatus('connected');
+        } else {
+          console.log('📊 [INIT] Data already exists, skipping initialization');
+          setConnectionStatus('connected');
+        }
+      };
+
+      // Listen to synced event (for multi-user rooms)
       newProvider.on('synced', (synced: any) => {
         console.log('🔄 [SYNC] Sync event fired, synced:', synced);
-
         if (synced) {
-          // Check if data has been initialized by ANY user (atomic check)
-          const hasBeenInitialized = yMeta.get('initialized');
-
-          if (!hasBeenInitialized && yDataArray.length === 0) {
-            console.log('📝 [SYNC] First user in room - populating default data');
-            doc.transact(() => {
-              // Set flag atomically WITHIN the transaction
-              yMeta.set('initialized', true);
-
-              // Populate with default data
-              DEFAULT_DATA.forEach(row => yDataArray.push([row]));
-              Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
-              yChatArray.push([{
-                id: 'welcome',
-                role: 'model',
-                text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
-                timestamp: Date.now()
-              }]);
-            });
-            console.log('✅ [SYNC] Default data populated');
-          } else {
-            console.log('📊 [SYNC] Data already initialized or has data');
-          }
-
-          setConnectionStatus('connected');
-          console.log('🟢 [STATUS] Connection status set to: connected');
+          initializeDataIfNeeded();
         }
       });
+
+      // Timeout fallback for single-user rooms (synced may not fire immediately)
+      const initTimeout = setTimeout(() => {
+        console.log('⏰ [TIMEOUT] Initializing after timeout (single-user or slow sync)');
+        initializeDataIfNeeded();
+      }, 2000); // Wait 2 seconds
+
+      // Store timeout to clear on cleanup
+      const timeoutToClear = initTimeout;
+
+      console.log('✅ [LUMINA] Initialization complete!');
 
       // Bind Yjs Types to React State
       yDataArray.observe(() => setData(yDataArray.toArray() as RowData[]));
@@ -787,6 +800,7 @@ function App() {
 
       return () => {
         console.log('🔌 [CLEANUP] Disconnecting provider...');
+        clearTimeout(timeoutToClear);
         newProvider.disconnect();
         newProvider.destroy();
         doc.destroy();
