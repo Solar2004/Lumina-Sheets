@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { RowData, CellValue, Collaborator } from '../types';
 import { Plus, Trash2, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Edit2 } from 'lucide-react';
 import { evaluateFormula, isFormula } from '../utils/formulaEngine';
-import { detectPattern, generateNextValues } from '../utils/autoFill';
+import { detectPattern, generateNextValues, FillDirection, generateFillValues } from '../utils/autoFill';
 
 interface SpreadsheetProps {
   data: RowData[];
@@ -80,9 +80,16 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
   const [dragRange, setDragRange] = useState<{
     startRow: number;
     endRow: number;
-    col: string;
+    startCol: number;
+    endCol: number;
   } | null>(null);
   const [detectedPattern, setDetectedPattern] = useState<string | null>(null);
+
+  // Drag-to-Reorder State
+  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [draggedRow, setDraggedRow] = useState<number | null>(null);
+  const [dragOverRow, setDragOverRow] = useState<number | null>(null);
 
   const resizingRef = useRef<{ col: string, startX: number, startWidth: number } | null>(null);
 
@@ -281,6 +288,98 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
     if (editingHeader) commitHeaderEdit();
   };
 
+  // --- Drag to Reorder Columns ---
+  const handleColumnDragStart = (e: React.DragEvent, col: string) => {
+    if (editingHeader) return; // Don't allow dragging while editing
+    setDraggedColumn(col);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleColumnDragOver = (e: React.DragEvent, col: string) => {
+    e.preventDefault();
+    if (draggedColumn && draggedColumn !== col) {
+      setDragOverColumn(col);
+    }
+  };
+
+  const handleColumnDragEnd = () => {
+    if (draggedColumn && dragOverColumn && draggedColumn !== dragOverColumn) {
+      // Reorder columns
+      const newColumns = [...columns];
+      const draggedIndex = newColumns.indexOf(draggedColumn);
+      const targetIndex = newColumns.indexOf(dragOverColumn);
+
+      if (draggedIndex !== -1 && targetIndex !== -1) {
+        // Remove from old position and insert at new position
+        newColumns.splice(draggedIndex, 1);
+        const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+        newColumns.splice(newTargetIndex, 0, draggedColumn);
+
+        // Update sort config if needed
+        if (sortConfig?.key === draggedColumn) {
+          setSortConfig(null);
+        }
+
+        // Update selected column if needed
+        if (selectedColumn === draggedColumn) {
+          setSelectedColumn(draggedColumn);
+        }
+
+        onUpdate(data, newColumns);
+      }
+    }
+
+    setDraggedColumn(null);
+    setDragOverColumn(null);
+  };
+
+  const handleColumnDragLeave = () => {
+    setDragOverColumn(null);
+  };
+
+  // --- Drag to Reorder Rows ---
+  const handleRowDragStart = (e: React.DragEvent, rowIndex: number) => {
+    setDraggedRow(rowIndex);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleRowDragOver = (e: React.DragEvent, rowIndex: number) => {
+    e.preventDefault();
+    if (draggedRow !== null && draggedRow !== rowIndex) {
+      setDragOverRow(rowIndex);
+    }
+  };
+
+  const handleRowDragEnd = () => {
+    if (draggedRow !== null && dragOverRow !== null && draggedRow !== dragOverRow) {
+      // Reorder rows in the original data (not sorted)
+      const newData = [...data];
+      const draggedRowData = sortedData[draggedRow];
+      const targetRowData = sortedData[dragOverRow];
+
+      const draggedOriginalIndex = data.indexOf(draggedRowData);
+      const targetOriginalIndex = data.indexOf(targetRowData);
+
+      if (draggedOriginalIndex !== -1 && targetOriginalIndex !== -1) {
+        // Remove from old position
+        newData.splice(draggedOriginalIndex, 1);
+        // Calculate new target index after removal
+        const newTargetIndex = draggedOriginalIndex < targetOriginalIndex ? targetOriginalIndex - 1 : targetOriginalIndex;
+        // Insert at new position
+        newData.splice(newTargetIndex, 0, draggedRowData);
+
+        onUpdate(newData);
+      }
+    }
+
+    setDraggedRow(null);
+    setDragOverRow(null);
+  };
+
+  const handleRowDragLeave = () => {
+    setDragOverRow(null);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') commitEdit();
     if (e.key === 'Escape') setEditCell(null);
@@ -325,10 +424,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
     e.stopPropagation();
 
     setIsDragging(true);
+    const colIndex = columns.indexOf(col);
     const initialRange = {
       startRow: rowIndex,
       endRow: rowIndex,
-      col
+      startCol: colIndex,
+      endCol: colIndex
     };
     setDragRange(initialRange);
 
@@ -337,28 +438,52 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
 
     const handleMouseMove = (e: MouseEvent) => {
       const element = document.elementFromPoint(e.clientX, e.clientY);
-      const cellElement = element?.closest('[data-row-index]');
+      const cellElement = element?.closest('[data-cell-pos]');
 
       if (cellElement) {
         const targetRow = parseInt(cellElement.getAttribute('data-row-index') || '0');
-        if (targetRow >= rowIndex) {
-          currentRange = { ...currentRange, endRow: targetRow };
-          setDragRange(currentRange);
+        const targetCol = parseInt(cellElement.getAttribute('data-col-index') || '0');
 
-          // Update detected pattern
-          const sourceValues: CellValue[] = [];
-          for (let i = 0; i <= rowIndex; i++) {
+        currentRange = {
+          startRow: rowIndex,
+          endRow: targetRow,
+          startCol: colIndex,
+          endCol: targetCol
+        };
+        setDragRange(currentRange);
+
+        // Update detected pattern
+        const direction: FillDirection =
+          targetRow > rowIndex ? 'down' :
+            targetRow < rowIndex ? 'up' :
+              targetCol > colIndex ? 'right' : 'left';
+
+        const sourceValues: CellValue[] = [];
+
+        if (direction === 'down' || direction === 'up') {
+          // Vertical fill - get column values
+          const minRow = Math.min(rowIndex, targetRow);
+          const maxRow = Math.max(rowIndex, targetRow);
+          for (let i = minRow; i <= rowIndex; i++) {
             sourceValues.push(sortedData[i]?.[col] || null);
           }
-          const pattern = detectPattern(sourceValues);
-          setDetectedPattern(pattern ? `${pattern.description} (${pattern.confidence}% confident)` : null);
+        } else {
+          // Horizontal fill - get row values
+          const minCol = Math.min(colIndex, targetCol);
+          for (let i = minCol; i <= colIndex; i++) {
+            sourceValues.push(sortedData[rowIndex]?.[columns[i]] || null);
+          }
         }
+
+        const pattern = detectPattern(sourceValues);
+        const directionIcon = direction === 'down' ? '↓' : direction === 'up' ? '↑' : direction === 'right' ? '→' : '←';
+        setDetectedPattern(pattern ? `${directionIcon} ${pattern.description} (${pattern.confidence}% confident)` : `${directionIcon} Fill`);
       }
     };
 
     const handleMouseUp = () => {
       // Use the ref value instead of state
-      if (currentRange && currentRange.endRow > currentRange.startRow) {
+      if (currentRange && (currentRange.endRow !== currentRange.startRow || currentRange.endCol !== currentRange.startCol)) {
         performAutoFill(currentRange);
       }
       setIsDragging(false);
@@ -373,46 +498,89 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const performAutoFill = (range?: { startRow: number; endRow: number; col: string }) => {
+  const performAutoFill = (range?: { startRow: number; endRow: number; startCol: number; endCol: number }) => {
     const fillRange = range || dragRange;
     if (!fillRange) return;
 
-    const { startRow, endRow, col } = fillRange;
+    const { startRow, endRow, startCol, endCol } = fillRange;
 
-    // Only fill downwards
-    if (endRow <= startRow) return;
+    // Determine direction
+    const direction: FillDirection =
+      endRow > startRow ? 'down' :
+        endRow < startRow ? 'up' :
+          endCol > startCol ? 'right' : 'left';
 
-    // Get source values up to startRow
-    const sourceValues: CellValue[] = [];
-    for (let i = 0; i <= startRow; i++) {
-      sourceValues.push(sortedData[i]?.[col] || null);
-    }
-
-    // Detect pattern and generate values
-    const count = endRow - startRow;
-    const newValues = generateNextValues(sourceValues, count, startRow);
-
-    // Update data
     const newData = [...data];
 
-    for (let i = 0; i < count; i++) {
-      const targetRow = startRow + i + 1;
+    if (direction === 'down' || direction === 'up') {
+      // Vertical fill
+      const col = columns[startCol];
+      const isDown = direction === 'down';
+      const minRow = isDown ? startRow : endRow;
+      const maxRow = isDown ? endRow : startRow;
 
-      if (targetRow < sortedData.length) {
-        const visualRow = sortedData[targetRow];
-        const originalIndex = data.indexOf(visualRow);
+      // Get source values
+      const sourceValues: CellValue[] = [];
+      for (let i = minRow; i <= startRow; i++) {
+        sourceValues.push(sortedData[i]?.[col] || null);
+      }
 
-        if (originalIndex !== -1) {
-          newData[originalIndex] = {
-            ...newData[originalIndex],
-            [col]: newValues[i]
-          };
+      // Generate fill values
+      const count = Math.abs(endRow - startRow);
+      const fillValues = generateFillValues(sourceValues, direction, count, { row: startRow, col: startCol });
+
+      // Apply values
+      for (let i = 0; i < count; i++) {
+        const targetRow = isDown ? startRow + i + 1 : startRow - i - 1;
+
+        if (targetRow >= 0 && targetRow < sortedData.length) {
+          const visualRow = sortedData[targetRow];
+          const originalIndex = data.indexOf(visualRow);
+
+          if (originalIndex !== -1) {
+            newData[originalIndex] = {
+              ...newData[originalIndex],
+              [col]: fillValues[i]
+            };
+          }
+        } else if (targetRow >= sortedData.length) {
+          // Create new rows if needed (only when going down)
+          const newRow: RowData = {};
+          columns.forEach(c => newRow[c] = c === col ? fillValues[i] : null);
+          newData.push(newRow);
         }
-      } else {
-        // Create new rows if needed
-        const newRow: RowData = {};
-        columns.forEach(c => newRow[c] = c === col ? newValues[i] : null);
-        newData.push(newRow);
+      }
+    } else {
+      // Horizontal fill
+      const isRight = direction === 'right';
+      const minCol = isRight ? startCol : endCol;
+      const maxCol = isRight ? endCol : startCol;
+
+      // Get source values from the row
+      const sourceValues: CellValue[] = [];
+      for (let i = minCol; i <= startCol; i++) {
+        sourceValues.push(sortedData[startRow]?.[columns[i]] || null);
+      }
+
+      // Generate fill values
+      const count = Math.abs(endCol - startCol);
+      const fillValues = generateFillValues(sourceValues, direction, count, { row: startRow, col: startCol });
+
+      // Apply values to the row
+      const visualRow = sortedData[startRow];
+      const originalIndex = data.indexOf(visualRow);
+
+      if (originalIndex !== -1) {
+        const updatedRow = { ...newData[originalIndex] };
+
+        for (let i = 0; i < count; i++) {
+          const targetCol = isRight ? startCol + i + 1 : startCol - i - 1;
+          if (targetCol >= 0 && targetCol < columns.length) {
+            updatedRow[columns[targetCol]] = fillValues[i];
+          }
+        }
+
+        newData[originalIndex] = updatedRow;
       }
     }
 
@@ -536,10 +704,17 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
               {columns.map((col, colIndex) => (
                 <th
                   key={col}
+                  draggable={!editingHeader}
+                  onDragStart={(e) => handleColumnDragStart(e, col)}
+                  onDragOver={(e) => handleColumnDragOver(e, col)}
+                  onDragEnd={handleColumnDragEnd}
+                  onDragLeave={handleColumnDragLeave}
                   className={`
-                    relative px-2 py-3 text-left text-xs font-semibold uppercase tracking-wider border-r border-b border-gray-700 group select-none cursor-pointer transition-colors
-                    ${selectedColumn === col ? 'bg-blue-900/40 text-blue-300' : 'text-gray-300 hover:bg-[#3c4043]'}
-                  `}
+                  relative px-2 py-3 text-left text-xs font-semibold uppercase tracking-wider border-r border-b border-gray-700 group select-none cursor-move transition-all
+                  ${selectedColumn === col ? 'bg-blue-900/40 text-blue-300' : 'text-gray-300 hover:bg-[#3c4043]'}
+                  ${draggedColumn === col ? 'opacity-50' : ''}
+                  ${dragOverColumn === col ? 'border-l-4 border-l-blue-500' : ''}
+                `}
                   onClick={() => handleHeaderClick(col)}
                   onDoubleClick={() => handleHeaderDoubleClick(col)}
                   style={{
@@ -547,7 +722,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                     minWidth: colWidths[col] || 150,
                     maxWidth: colWidths[col] || 150
                   }}
-                  title="Click to select, Double-click to rename"
+                  title="Click to select, Double-click to rename, Drag to reorder"
                 >
                   {editingHeader === col ? (
                     <input
@@ -605,15 +780,23 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                 `}
                 >
                   <td
+                    draggable
+                    onDragStart={(e) => handleRowDragStart(e, rowIndex)}
+                    onDragOver={(e) => handleRowDragOver(e, rowIndex)}
+                    onDragEnd={handleRowDragEnd}
+                    onDragLeave={handleRowDragLeave}
                     onClick={() => handleRowHeaderClick(rowIndex)}
                     className={`
-                    px-2 py-2 whitespace-nowrap text-xs border-r border-b border-gray-800 sticky left-0 group-hover:bg-[#2a2b2e] cursor-pointer text-center transition-colors
+                    px-2 py-2 whitespace-nowrap text-xs border-r border-b border-gray-800 sticky left-0 group-hover:bg-[#2a2b2e] cursor-move text-center transition-all
                     ${selectedRowIndex === rowIndex ? 'bg-blue-900/30 text-blue-300' : 'bg-[#202124] text-gray-500 hover:text-blue-400'}
+                    ${draggedRow === rowIndex ? 'opacity-50' : ''}
+                    ${dragOverRow === rowIndex ? 'border-t-4 border-t-blue-500' : ''}
                   `}
+                    title="Click to select, Drag to reorder"
                   >
                     {rowIndex + 1}
                   </td>
-                  {columns.map((col) => {
+                  {columns.map((col, colIndex) => {
                     const isEditing = editCell?.row === rowIndex && editCell?.col === col;
                     const isSelected = selectedCell?.row === rowIndex && selectedCell?.col === col;
                     const isColSelected = selectedColumn === col;
@@ -635,9 +818,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
 
                     // Check if this cell is in drag range
                     const isInDragRange = dragRange &&
-                      col === dragRange.col &&
-                      rowIndex > dragRange.startRow &&
-                      rowIndex <= dragRange.endRow;
+                      colIndex >= Math.min(dragRange.startCol, dragRange.endCol) &&
+                      colIndex <= Math.max(dragRange.startCol, dragRange.endCol) &&
+                      rowIndex >= Math.min(dragRange.startRow, dragRange.endRow) &&
+                      rowIndex <= Math.max(dragRange.startRow, dragRange.endRow) &&
+                      !(rowIndex === dragRange.startRow && colIndex === dragRange.startCol);
 
                     let bgClass = '';
                     if (isSelected) {
@@ -654,6 +839,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
 
                     return (
                       <td
+                        data-cell-pos="true"
+                        data-col-index={colIndex}
                         key={`${rowIndex}-${col}`}
                         className={`
                         px-2 py-1.5 text-sm border-r border-b border-gray-800 relative cursor-text

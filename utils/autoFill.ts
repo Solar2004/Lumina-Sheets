@@ -263,47 +263,7 @@ function incrementFormulaReferences(formula: string, increment: number): string 
     });
 }
 
-/**
- * Generate next days of week
- */
-function generateDaysOfWeek(lastDay: string, count: number): string[] {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const lowerDays = days.map(d => d.toLowerCase());
 
-    const lastIndex = lowerDays.indexOf(lastDay.toLowerCase());
-    if (lastIndex === -1) return Array(count).fill(lastDay);
-
-    const result: string[] = [];
-    for (let i = 0; i < count; i++) {
-        const nextIndex = (lastIndex + i + 1) % 7;
-        // Match capitalization of input
-        const isCapitalized = lastDay[0] === lastDay[0].toUpperCase();
-        const day = days[nextIndex];
-        result.push(isCapitalized ? day : day.toLowerCase());
-    }
-    return result;
-}
-
-/**
- * Generate next months
- */
-function generateMonths(lastMonth: string, count: number): string[] {
-    const months = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-    const lowerMonths = months.map(m => m.toLowerCase());
-
-    const lastIndex = lowerMonths.indexOf(lastMonth.toLowerCase());
-    if (lastIndex === -1) return Array(count).fill(lastMonth);
-
-    const result: string[] = [];
-    for (let i = 0; i < count; i++) {
-        const nextIndex = (lastIndex + i + 1) % 12;
-        const isCapitalized = lastMonth[0] === lastMonth[0].toUpperCase();
-        const month = months[nextIndex];
-        result.push(isCapitalized ? month : month.toLowerCase());
-    }
-    return result;
-}
 
 /**
  * AI-enhanced pattern detection prompt generator
@@ -326,4 +286,179 @@ Columns: ${columns.join(', ')}
 Sample data: ${JSON.stringify(data.slice(0, 3))}
 
 Please generate the next value that would logically continue this sequence. If it's a formula, make sure cell references increment correctly. Return ONLY the value, no explanation.`;
+}
+
+/**
+ * Direction type for autofill
+ */
+export type FillDirection = 'down' | 'up' | 'right' | 'left';
+
+/**
+ * Increment cell references in a formula based on direction
+ */
+export function incrementFormulaByDirection(
+    formula: string,
+    rowOffset: number,
+    colOffset: number
+): string {
+    return formula.replace(/([A-Z]+)(\d+)/g, (match, col, row) => {
+        const newRow = parseInt(row) + rowOffset;
+
+        if (colOffset !== 0) {
+            // Convert column letter to number, add offset, convert back
+            const colNum = columnLetterToNumber(col);
+            const newColNum = colNum + colOffset;
+            if (newColNum < 1) return match; // Don't go below column A
+            const newCol = numberToColumnLetter(newColNum);
+            return `${newCol}${newRow}`;
+        }
+
+        return `${col}${newRow}`;
+    });
+}
+
+/**
+ * Convert column letter to number (A=1, B=2, ..., Z=26, AA=27, etc.)
+ */
+function columnLetterToNumber(letter: string): number {
+    let num = 0;
+    for (let i = 0; i < letter.length; i++) {
+        num = num * 26 + (letter.charCodeAt(i) - 64);
+    }
+    return num;
+}
+
+/**
+ * Convert number to column letter (1=A, 2=B, ..., 26=Z, 27=AA, etc.)
+ */
+function numberToColumnLetter(num: number): string {
+    let letter = '';
+    while (num > 0) {
+        const remainder = (num - 1) % 26;
+        letter = String.fromCharCode(65 + remainder) + letter;
+        num = Math.floor((num - 1) / 26);
+    }
+    return letter;
+}
+
+/**
+ * Generate values for multi-directional fill
+ */
+export function generateFillValues(
+    sourceValues: CellValue[],
+    direction: FillDirection,
+    count: number,
+    startPosition: { row: number; col: number }
+): CellValue[] {
+    const pattern = detectPattern(sourceValues);
+
+    if (!pattern || pattern.confidence < 40) {
+        // No clear pattern, repeat the last value
+        const lastValue = sourceValues[sourceValues.length - 1];
+        return Array(count).fill(lastValue);
+    }
+
+    const result: CellValue[] = [];
+    const isVertical = direction === 'up' || direction === 'down';
+    const isReverse = direction === 'up' || direction === 'left';
+
+    switch (pattern.type) {
+        case 'numeric':
+            const lastNum = Number(sourceValues[sourceValues.length - 1]);
+            const increment = pattern.increment || 0;
+            const multiplier = isReverse ? -1 : 1;
+
+            for (let i = 0; i < count; i++) {
+                if (increment > 1.5) {
+                    // Geometric sequence
+                    result.push(lastNum * Math.pow(increment, (i + 1) * multiplier));
+                } else {
+                    // Arithmetic sequence
+                    result.push(lastNum + increment * (i + 1) * multiplier);
+                }
+            }
+            break;
+
+        case 'formula':
+            const lastFormula = String(sourceValues[sourceValues.length - 1]);
+            for (let i = 0; i < count; i++) {
+                const offset = (i + 1) * (isReverse ? -1 : 1);
+                const rowOffset = isVertical ? offset : 0;
+                const colOffset = isVertical ? 0 : offset;
+                result.push(incrementFormulaByDirection(lastFormula, rowOffset, colOffset));
+            }
+            break;
+
+        case 'text':
+            const lastText = String(sourceValues[sourceValues.length - 1]);
+            const match = lastText.match(/^(.+?)(\d+)$/);
+
+            if (match && pattern.increment) {
+                const prefix = match[1];
+                const lastNum = parseInt(match[2]);
+                const multiplier = isReverse ? -1 : 1;
+
+                for (let i = 0; i < count; i++) {
+                    result.push(`${prefix}${lastNum + pattern.increment * (i + 1) * multiplier}`);
+                }
+            } else if (pattern.description.includes('Days of week')) {
+                result.push(...generateDaysOfWeek(lastText, count, isReverse));
+            } else if (pattern.description.includes('Months')) {
+                result.push(...generateMonths(lastText, count, isReverse));
+            } else {
+                result.push(...Array(count).fill(lastText));
+            }
+            break;
+
+        default:
+            const lastValue = sourceValues[sourceValues.length - 1];
+            result.push(...Array(count).fill(lastValue));
+    }
+
+    return result;
+}
+
+/**
+ * Updated generateDaysOfWeek with reverse support
+ */
+function generateDaysOfWeek(lastDay: string, count: number, reverse: boolean = false): string[] {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const lowerDays = days.map(d => d.toLowerCase());
+
+    const lastIndex = lowerDays.indexOf(lastDay.toLowerCase());
+    if (lastIndex === -1) return Array(count).fill(lastDay);
+
+    const result: string[] = [];
+    const multiplier = reverse ? -1 : 1;
+
+    for (let i = 0; i < count; i++) {
+        const nextIndex = (lastIndex + (i + 1) * multiplier + 7 * 100) % 7; // +7*100 to handle negatives
+        const isCapitalized = lastDay[0] === lastDay[0].toUpperCase();
+        const day = days[nextIndex];
+        result.push(isCapitalized ? day : day.toLowerCase());
+    }
+    return result;
+}
+
+/**
+ * Updated generateMonths with reverse support
+ */
+function generateMonths(lastMonth: string, count: number, reverse: boolean = false): string[] {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+    const lowerMonths = months.map(m => m.toLowerCase());
+
+    const lastIndex = lowerMonths.indexOf(lastMonth.toLowerCase());
+    if (lastIndex === -1) return Array(count).fill(lastMonth);
+
+    const result: string[] = [];
+    const multiplier = reverse ? -1 : 1;
+
+    for (let i = 0; i < count; i++) {
+        const nextIndex = (lastIndex + (i + 1) * multiplier + 12 * 100) % 12; // +12*100 to handle negatives
+        const isCapitalized = lastMonth[0] === lastMonth[0].toUpperCase();
+        const month = months[nextIndex];
+        result.push(isCapitalized ? month : month.toLowerCase());
+    }
+    return result;
 }
