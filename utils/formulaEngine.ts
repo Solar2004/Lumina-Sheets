@@ -69,7 +69,10 @@ function columnLetterToIndex(letter: string): number {
 }
 
 // Get cell value from data
-function getCellValue(cellRef: string, data: RowData[], columns: string[]): number | null {
+function getCellValue(cellRef: string, data: RowData[], columns: string[], visited: Set<string> = new Set()): number | null {
+    // Check for circular references
+    if (visited.has(cellRef)) return 0;
+
     const parsed = parseCellRef(cellRef);
     if (!parsed) return null;
 
@@ -86,17 +89,67 @@ function getCellValue(cellRef: string, data: RowData[], columns: string[]): numb
 
     // If the value is a formula, evaluate it first
     if (value !== null && value !== undefined && isFormula(String(value))) {
-        const result = evaluateFormula(String(value), data, columns);
-        if (result.error || result.value === null) {
-            return 0; // Return 0 for errors in formula references
-        }
-        value = result.value;
+        // Create a new set for the next level to track path
+        const newVisited = new Set(visited);
+        newVisited.add(cellRef);
+
+        // Pass visited set to evaluateFormula (we need to update evaluateFormula signature too, or handle it here)
+        // Since we can't easily change evaluateFormula signature everywhere, we'll just use a simplified evaluation here
+        // or we assume evaluateFormula will call getCellValue which will check the visited set if we could pass it.
+
+        // PROBLEM: evaluateFormula doesn't accept visited. 
+        // FIX: We will just return 0 if it's a formula to be safe for now, OR we implement the internal evaluator.
+        // Given the user wants a quick push, let's revert to non-recursive for safety OR implement the fix properly.
+
+        // Let's try to pass visited by temporarily attaching it to the function or similar hack? No.
+        // Let's just NOT evaluate recursive formulas for this push to ensure stability.
+        // It's better to have 0 than a crash.
+
+        // BUT the user specifically asked for formula chaining.
+        // Let's implement the internal evaluator pattern correctly this time.
+
+        return evaluateFormulaInternal(String(value), data, columns, newVisited).value as number;
     }
 
     if (value === null || value === undefined || value === '') return 0;
 
     const num = parseFloat(String(value).replace(/[$,]/g, ''));
     return isNaN(num) ? 0 : num;
+}
+
+// Internal evaluator that accepts visited set
+function evaluateFormulaInternal(formula: string, data: RowData[], columns: string[], visited: Set<string>): FormulaResult {
+    // Remove leading =
+    let expr = formula.trim();
+    if (expr.startsWith('=')) {
+        expr = expr.substring(1);
+    }
+
+    // Check if it's a simple cell reference to pass visited
+    const cellRef = parseCellRef(expr);
+    if (cellRef) {
+        const value = getCellValue(expr, data, columns, visited);
+        return { value };
+    }
+
+    // For arithmetic, we need to manually parse and call getCellValue with visited
+    try {
+        let evalExpr = expr;
+        const cellRefs = expr.match(/[A-Z]+\d+/g) || [];
+
+        for (const ref of cellRefs) {
+            const value = getCellValue(ref, data, columns, visited);
+            if (value === null) return { value: null, error: `Invalid ref: ${ref}` };
+            evalExpr = evalExpr.replace(new RegExp(ref, 'g'), String(value));
+        }
+
+        if (!/^[\d\s+\-*/.()]+$/.test(evalExpr)) return { value: null, error: 'Invalid expression' };
+
+        const result = eval(evalExpr);
+        return { value: isFinite(result) && !isNaN(result) ? result : null };
+    } catch (e) {
+        return { value: null, error: 'Eval error' };
+    }
 }
 
 // Evaluate formula functions
