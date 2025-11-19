@@ -325,11 +325,15 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
     e.stopPropagation();
 
     setIsDragging(true);
-    setDragRange({
+    const initialRange = {
       startRow: rowIndex,
       endRow: rowIndex,
       col
-    });
+    };
+    setDragRange(initialRange);
+
+    // Use a ref to track current range during drag
+    let currentRange = initialRange;
 
     const handleMouseMove = (e: MouseEvent) => {
       const element = document.elementFromPoint(e.clientX, e.clientY);
@@ -338,7 +342,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
       if (cellElement) {
         const targetRow = parseInt(cellElement.getAttribute('data-row-index') || '0');
         if (targetRow >= rowIndex) {
-          setDragRange(prev => prev ? { ...prev, endRow: targetRow } : null);
+          currentRange = { ...currentRange, endRow: targetRow };
+          setDragRange(currentRange);
 
           // Update detected pattern
           const sourceValues: CellValue[] = [];
@@ -352,8 +357,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
     };
 
     const handleMouseUp = () => {
-      if (dragRange && dragRange.endRow > dragRange.startRow) {
-        performAutoFill();
+      // Use the ref value instead of state
+      if (currentRange && currentRange.endRow > currentRange.startRow) {
+        performAutoFill(currentRange);
       }
       setIsDragging(false);
       setDragRange(null);
@@ -367,10 +373,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const performAutoFill = () => {
-    if (!dragRange) return;
+  const performAutoFill = (range?: { startRow: number; endRow: number; col: string }) => {
+    const fillRange = range || dragRange;
+    if (!fillRange) return;
 
-    const { startRow, endRow, col } = dragRange;
+    const { startRow, endRow, col } = fillRange;
 
     // Only fill downwards
     if (endRow <= startRow) return;

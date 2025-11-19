@@ -82,7 +82,16 @@ function getCellValue(cellRef: string, data: RowData[], columns: string[]): numb
 
     const actualColumnName = columns[colIndex];
     const row = data[rowIndex];
-    const value = row[actualColumnName];
+    let value = row[actualColumnName];
+
+    // If the value is a formula, evaluate it first
+    if (value !== null && value !== undefined && isFormula(String(value))) {
+        const result = evaluateFormula(String(value), data, columns);
+        if (result.error || result.value === null) {
+            return 0; // Return 0 for errors in formula references
+        }
+        value = result.value;
+    }
 
     if (value === null || value === undefined || value === '') return 0;
 
