@@ -1,6 +1,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { AIActionType, AIResponseParsed, RowData, ChartConfig, AIConfig } from '../types';
+import { analyzeDataForChart, getQuickChartSuggestion } from '../utils/chartRecommender';
 
 // Helper to sanitize JSON from potential markdown code blocks
 const cleanJson = (text: string): string => {
@@ -8,8 +9,8 @@ const cleanJson = (text: string): string => {
 };
 
 const SYSTEM_INSTRUCTION = `
-You are Lumina, an elite Data Scientist and AI Spreadsheet Assistant.
-Your goal is to manipulate data, generate deep insights, and visualize trends.
+You are Lumina, an elite Data Scientist and AI Spreadsheet Assistant with advanced chart recommendation capabilities.
+Your goal is to manipulate data, generate deep insights, and visualize trends with intelligent chart suggestions.
 
 **CORE CAPABILITIES & INTENTS:**
 
@@ -23,8 +24,11 @@ Your goal is to manipulate data, generate deep insights, and visualize trends.
    - Trigger this when asked to "Analyze the data", "Give me a summary", "Find trends", or "What does this data tell us?".
    - Return a structured JSON summary of the data including key statistics, trends, and actionable recommendations.
 
-3. **VISUALIZATION (Action: CREATE_CHART)**:
-   - Generate charts for trends, comparisons, or distributions.
+3. **INTELLIGENT VISUALIZATION (Action: CREATE_CHART)**:
+   - I will provide smart chart recommendations based on the data selected.
+   - You can suggest charts for trends, comparisons, or distributions.
+   - When user asks for a chart, analyze the data and recommend the best chart type.
+   - Consider: time series (line/area), comparisons (bar), correlations (scatter), proportions (pie).
 
 4. **WEB SEARCH** (Only if available in tools):
    - Use search to find real-world data.
@@ -56,7 +60,7 @@ Your goal is to manipulate data, generate deep insights, and visualize trends.
 }
 \`\`\`
 
-**C) To Create Chart:**
+**C) To Create Chart (with AI recommendation context):**
 \`\`\`json
 {
   "type": "CREATE_CHART",
@@ -74,16 +78,17 @@ Your goal is to manipulate data, generate deep insights, and visualize trends.
 - **Accuracy**: If calculating, be precise.
 - **Completeness**: When updating data, return the FULL dataset (up to reasonable limits) or the modified subset if appending.
 - **Tone**: Professional, helpful, data-driven.
+- **Chart Intelligence**: When creating charts, consider the AI recommendation provided in the context.
 `;
 
 const processAIResponse = (fullText: string, groundingChunks: any[] = []): AIResponseParsed => {
   const groundingUrls = groundingChunks
-      .map(chunk => chunk.web ? { title: chunk.web.title || 'Source', uri: chunk.web.uri || '' } : null)
-      .filter((u): u is {title: string, uri: string} => u !== null && u.uri !== '');
+    .map(chunk => chunk.web ? { title: chunk.web.title || 'Source', uri: chunk.web.uri || '' } : null)
+    .filter((u): u is { title: string, uri: string } => u !== null && u.uri !== '');
 
   // Parse JSON actions
   const jsonMatch = fullText.match(/```json([\s\S]*?)```/);
-  
+
   let action = AIActionType.NONE;
   let payload = undefined;
   let displayText = fullText;
@@ -92,22 +97,22 @@ const processAIResponse = (fullText: string, groundingChunks: any[] = []): AIRes
     try {
       const jsonContent = cleanJson(jsonMatch[1]);
       const parsed = JSON.parse(jsonContent);
-      
+
       if (parsed.type === "UPDATE_DATA") {
         action = AIActionType.UPDATE_DATA;
         payload = parsed.data;
-        displayText = fullText.replace(jsonMatch[0], '').trim(); 
-        if(!displayText) displayText = "I've updated the spreadsheet as requested.";
+        displayText = fullText.replace(jsonMatch[0], '').trim();
+        if (!displayText) displayText = "I've updated the spreadsheet as requested.";
       } else if (parsed.type === "CREATE_CHART") {
         action = AIActionType.CREATE_CHART;
         payload = parsed.config;
         displayText = fullText.replace(jsonMatch[0], '').trim();
-        if(!displayText) displayText = "Here is the visualization.";
+        if (!displayText) displayText = "Here is the visualization.";
       } else if (parsed.type === "SHOW_INSIGHTS") {
         action = AIActionType.SHOW_INSIGHTS;
         payload = parsed.config;
         displayText = fullText.replace(jsonMatch[0], '').trim();
-        if(!displayText) displayText = "I've analyzed your data.";
+        if (!displayText) displayText = "I've analyzed your data.";
       }
     } catch (e) {
       console.error("Failed to parse AI JSON action:", e);
@@ -124,17 +129,29 @@ const processAIResponse = (fullText: string, groundingChunks: any[] = []): AIRes
 };
 
 export const generateResponse = async (
-  prompt: string, 
-  currentData: RowData[], 
+  prompt: string,
+  currentData: RowData[],
   currentColumns: string[],
-  history: {role: string, parts: {text: string}[]}[],
+  history: { role: string, parts: { text: string }[] }[],
   config?: AIConfig
 ): Promise<AIResponseParsed> => {
-  
+
   // Context preparation
-  const dataPreview = JSON.stringify(currentData.slice(0, 50)); 
+  const dataPreview = JSON.stringify(currentData.slice(0, 50));
   const columnInfo = currentColumns.join(", ");
-  const fullSystemInstruction = `${SYSTEM_INSTRUCTION}\n\nCurrent Data Context:\n- Columns: ${columnInfo}\n- First 50 rows (JSON): ${dataPreview}`;
+
+  // Check if user is asking for a chart/visualization
+  const isChartRequest = /chart|graph|plot|visual|show.*trend|compare.*visual/i.test(prompt);
+  let chartRecommendation = '';
+
+  if (isChartRequest && currentColumns.length > 0) {
+    const recommendation = analyzeDataForChart(currentData, currentColumns);
+    if (recommendation) {
+      chartRecommendation = `\n\n📊 AI Chart Recommendation:\n- Type: ${recommendation.recommendedType}\n- Confidence: ${recommendation.confidence}%\n- Reason: ${recommendation.reason}\n- Suggested X-axis: ${recommendation.dataKeyX}\n- Suggested Y-axis: ${Array.isArray(recommendation.dataKeyY) ? recommendation.dataKeyY.join(', ') : recommendation.dataKeyY}\n`;
+    }
+  }
+
+  const fullSystemInstruction = `${SYSTEM_INSTRUCTION}\n\nCurrent Data Context:\n- Columns: ${columnInfo}\n- First 50 rows (JSON): ${dataPreview}${chartRecommendation}`;
 
   // --- OPENROUTER HANDLER ---
   if (config?.provider === 'openrouter') {
@@ -154,8 +171,8 @@ export const generateResponse = async (
         method: "POST",
         headers: {
           "Authorization": `Bearer ${config.openRouterKey}`,
-          "HTTP-Referer": window.location.href, 
-          "X-Title": "LuminaData", 
+          "HTTP-Referer": window.location.href,
+          "X-Title": "LuminaData",
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -171,7 +188,7 @@ export const generateResponse = async (
 
       const json = await response.json();
       const fullText = json.choices?.[0]?.message?.content || "";
-      
+
       return processAIResponse(fullText);
 
     } catch (error) {
@@ -194,7 +211,7 @@ export const generateResponse = async (
 
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [
@@ -204,13 +221,13 @@ export const generateResponse = async (
       config: {
         systemInstruction: fullSystemInstruction,
         tools: [{ googleSearch: {} }],
-        temperature: 0.3, 
+        temperature: 0.3,
       }
     });
 
     const fullText = response.text || "";
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    
+
     return processAIResponse(fullText, groundingChunks);
 
   } catch (error) {
