@@ -71,6 +71,7 @@ export const DEFAULT_DATA: RowData[] = [
 export enum AIActionType {
   UPDATE_DATA = 'UPDATE_DATA',
   CREATE_CHART = 'CREATE_CHART',
+  CREATE_FORMULA = 'CREATE_FORMULA',
   SHOW_INSIGHTS = 'SHOW_INSIGHTS',
   NONE = 'NONE'
 }

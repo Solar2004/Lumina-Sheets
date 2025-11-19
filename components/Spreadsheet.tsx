@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { RowData, CellValue, Collaborator } from '../types';
 import { Plus, Trash2, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Edit2 } from 'lucide-react';
+import { evaluateFormula, isFormula } from '../utils/formulaEngine';
 
 interface SpreadsheetProps {
   data: RowData[];
@@ -17,6 +18,25 @@ const isImageUrl = (value: string) => {
 
 const isNumeric = (val: any): boolean => {
   return !isNaN(parseFloat(val)) && isFinite(val);
+};
+
+// Get display value for cell (evaluates formulas)
+const getCellDisplayValue = (value: CellValue, data: RowData[], columns: string[]): string | number => {
+  if (value === null || value === undefined) return '';
+
+  const strValue = String(value);
+
+  // Check if it's a formula
+  if (isFormula(strValue)) {
+    const result = evaluateFormula(strValue, data, columns);
+    if (result.error) {
+      return `#ERROR: ${result.error}`;
+    }
+    if (result.value === null) return '#N/A';
+    return result.value;
+  }
+
+  return value;
 };
 
 const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSelectionChange, collaborators = [] }) => {
@@ -463,10 +483,14 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                     const isColSelected = selectedColumn === col;
 
                     const value = row[col];
-                    const valString = String(value !== null && value !== undefined ? value : '');
+
+                    // Get display value (evaluates formulas)
+                    const displayValue = getCellDisplayValue(value, sortedData, columns);
+                    const valString = String(displayValue !== null && displayValue !== undefined ? displayValue : '');
                     const isImg = isImageUrl(valString);
-                    const isNum = isNumeric(value) && value !== '';
-                    const isNegative = isNum && Number(value) < 0;
+                    const isNum = isNumeric(displayValue) && displayValue !== '';
+                    const isNegative = isNum && Number(displayValue) < 0;
+                    const isFormulaCell = isFormula(String(value || ''));
 
                     // Collaborator cursor check
                     const remoteUser = collaborators.find(u => u.selection?.row === rowIndex && u.selection?.col === col);
@@ -485,6 +509,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                         ${isEditing ? 'p-0' : ''}
                         ${isNum ? 'text-right font-mono' : 'text-left'}
                         ${isNegative ? 'text-red-400' : 'text-gray-300'}
+                        ${isFormulaCell ? 'bg-purple-900/10' : ''}
                       `}
                         onClick={() => handleCellClick(rowIndex, col, value)}
                         style={{
@@ -528,7 +553,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                               </div>
                             ) : (
                               <span className="w-full truncate block">
-                                {isNum ? Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 }) : valString}
+                                {isNum ? Number(displayValue).toLocaleString(undefined, { maximumFractionDigits: 4 }) : valString}
                               </span>
                             )}
                           </div>

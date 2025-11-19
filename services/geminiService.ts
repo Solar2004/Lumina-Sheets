@@ -74,6 +74,26 @@ Your goal is to manipulate data, generate deep insights, and visualize trends wi
 }
 \`\`\`
 
+**D) To Create Formula:**
+\`\`\`json
+{
+  "type": "CREATE_FORMULA",
+  "formula": "=SUM(B2:E2)",
+  "cell": "F2",
+  "description": "Brief explanation of what the formula does"
+}
+\`\`\`
+
+**Available Formula Functions:**
+- SUM(range) - Add numbers
+- AVERAGE(range) - Calculate average
+- MAX(range) - Find maximum
+- MIN(range) - Find minimum
+- COUNT(range) - Count numbers
+- MEDIAN(range) - Find median
+- PRODUCT(range) - Multiply numbers
+- Arithmetic: =B2+C2, =B2*C2, etc.
+
 **General Rules:**
 - **Accuracy**: If calculating, be precise.
 - **Completeness**: When updating data, return the FULL dataset (up to reasonable limits) or the modified subset if appending.
