@@ -29,7 +29,8 @@ import {
   Cpu,
   CheckCircle2,
   AlertTriangle,
-  Image as ImageIcon
+  Image as ImageIcon,
+  RotateCcw
 } from 'lucide-react';
 
 import { DEFAULT_DATA, RowData, ChatMessage, AIActionType, InsightData, GalleryItem, ChartConfig, Collaborator, AIConfig, AIProvider, TurnConfig } from './types';
@@ -38,6 +39,7 @@ import ChartRenderer from './components/ChartRenderer';
 import { generateResponse } from './services/geminiService';
 import { exportToExcel, parseExcelFile, exportAiSession } from './services/excelService';
 import { autoFormatData } from './utils/autoFormatter';
+import NotificationCenter, { Notification } from './components/NotificationCenter';
 
 // Helper to generate random user colors
 const getRandomColor = () => {
@@ -54,7 +56,7 @@ const getRandomName = () => {
 const generateRoomCode = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude confusing characters
   let code = '';
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) { // Increased from 8 to 12 for lower collision probability
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
@@ -526,6 +528,9 @@ function App() {
   // Pending Action State (Local Only - Confirmation before broadcast)
   const [pendingUpdate, setPendingUpdate] = useState<{ payload: RowData[], description: string } | null>(null);
 
+  // Notifications State
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
   // AI Settings State (Persisted in LocalStorage)
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
     const saved = localStorage.getItem('lumina_ai_config');
@@ -693,22 +698,55 @@ function App() {
         const hasBeenInitialized = yMeta.get('initialized');
 
         if (!hasBeenInitialized && yDataArray.length === 0) {
-          console.log('📝 [INIT] Initializing default data...');
+          console.log('📝 [INIT] Initializing data...');
+
+          // Try to load from localStorage first
+          const savedData = localStorage.getItem(`lumina_data_${room}`);
+          const savedChat = localStorage.getItem(`lumina_chat_${room}`);
+          const savedGallery = localStorage.getItem(`lumina_gallery_${room}`);
+
           doc.transact(() => {
             // Set flag atomically WITHIN the transaction
             yMeta.set('initialized', true);
 
-            // Populate with default data
-            DEFAULT_DATA.forEach(row => yDataArray.push([row]));
-            Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
-            yChatArray.push([{
-              id: 'welcome',
-              role: 'model',
-              text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
-              timestamp: Date.now()
-            }]);
+            if (savedData) {
+              // Load saved data
+              console.log('💾 [INIT] Loading saved data from localStorage');
+              const parsedData = JSON.parse(savedData);
+              parsedData.forEach((row: RowData) => yDataArray.push([row]));
+              if (parsedData.length > 0) {
+                Object.keys(parsedData[0]).forEach(col => yColumnsArray.push([col]));
+              }
+            } else {
+              // Populate with default data
+              console.log('📝 [INIT] Using default data');
+              DEFAULT_DATA.forEach(row => yDataArray.push([row]));
+              Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
+            }
+
+            if (savedChat) {
+              // Load saved chat
+              console.log('💬 [INIT] Loading saved chat from localStorage');
+              const parsedChat = JSON.parse(savedChat);
+              parsedChat.forEach((msg: ChatMessage) => yChatArray.push([msg]));
+            } else {
+              // Default welcome message
+              yChatArray.push([{
+                id: 'welcome',
+                role: 'model',
+                text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
+                timestamp: Date.now()
+              }]);
+            }
+
+            if (savedGallery) {
+              // Load saved gallery
+              console.log('🖼️ [INIT] Loading saved gallery from localStorage');
+              const parsedGallery = JSON.parse(savedGallery);
+              parsedGallery.forEach((item: GalleryItem) => yGalleryArray.push([item]));
+            }
           });
-          console.log('✅ [INIT] Default data populated');
+          console.log('✅ [INIT] Data initialized');
           setConnectionStatus('connected');
         } else {
           console.log('📊 [INIT] Data already exists, skipping initialization');
@@ -735,10 +773,61 @@ function App() {
 
       console.log('✅ [LUMINA] Initialization complete!');
 
-      // Bind Yjs Types to React State
-      yDataArray.observe(() => setData(yDataArray.toArray() as RowData[]));
+      // Bind Yjs Types to React State with Notifications
+      let lastDataLength = yDataArray.length;
+      let lastChatLength = yChatArray.length;
+
+      yDataArray.observe((event) => {
+        setData(yDataArray.toArray() as RowData[]);
+
+        // Create notification for remote changes only
+        if (event.transaction.origin !== doc.clientID) {
+          const currentUser = collaborators.find(c => c.clientId === event.transaction.origin);
+          const userName = currentUser?.name || 'Someone';
+
+          if (yDataArray.length > lastDataLength) {
+            addNotification({
+              type: 'data',
+              user: userName,
+              message: `added ${yDataArray.length - lastDataLength} row(s)`
+            });
+          } else if (yDataArray.length < lastDataLength) {
+            addNotification({
+              type: 'data',
+              user: userName,
+              message: `deleted ${lastDataLength - yDataArray.length} row(s)`
+            });
+          } else {
+            addNotification({
+              type: 'data',
+              user: userName,
+              message: 'updated the spreadsheet'
+            });
+          }
+        }
+        lastDataLength = yDataArray.length;
+      });
+
       yColumnsArray.observe(() => setColumns(yColumnsArray.toArray() as string[]));
-      yChatArray.observe(() => setChatHistory(yChatArray.toArray() as ChatMessage[]));
+
+      yChatArray.observe((event) => {
+        setChatHistory(yChatArray.toArray() as ChatMessage[]);
+
+        // Notification for new chat messages (from others)
+        if (event.transaction.origin !== doc.clientID && yChatArray.length > lastChatLength) {
+          const messages = yChatArray.toArray() as ChatMessage[];
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage.role === 'user') {
+            addNotification({
+              type: 'chat',
+              user: 'Collaborator',
+              message: `sent a message: "${lastMessage.text.substring(0, 30)}..."`
+            });
+          }
+        }
+        lastChatLength = yChatArray.length;
+      });
+
       yGalleryArray.observe(() => setGalleryItems(yGalleryArray.toArray() as GalleryItem[]));
 
       // Initial State Sync
@@ -764,6 +853,9 @@ function App() {
       newProvider.awareness.setLocalStateField('user', localUser);
       console.log('👤 [PRESENCE] Local user set:', localUser.name);
 
+      let previousCollaboratorCount = 0;
+      let previousCollaboratorNames = new Set<string>();
+
       newProvider.awareness.on('change', () => {
         const states = newProvider.awareness.getStates();
         const activeUsers: Collaborator[] = [];
@@ -783,6 +875,34 @@ function App() {
             }
           }
         });
+
+        // Track user joins/leaves
+        const currentNames = new Set(activeUsers.map(u => u.name));
+
+        // User joined
+        currentNames.forEach(name => {
+          if (!previousCollaboratorNames.has(name)) {
+            addNotification({
+              type: 'user',
+              user: name,
+              message: 'joined the room'
+            });
+          }
+        });
+
+        // User left
+        previousCollaboratorNames.forEach(name => {
+          if (!currentNames.has(name)) {
+            addNotification({
+              type: 'user',
+              user: name,
+              message: 'left the room'
+            });
+          }
+        });
+
+        previousCollaboratorCount = activeUsers.length;
+        previousCollaboratorNames = currentNames;
 
         setCollaborators(activeUsers);
         console.log('👥 [PRESENCE] Active collaborators:', activeUsers.length, activeUsers.map(u => u.name));
@@ -840,6 +960,27 @@ function App() {
     };
   }, [provider]);
 
+  // Persist data to localStorage (per room)
+  useEffect(() => {
+    if (!roomName || data.length === 0) return;
+    const key = `lumina_data_${roomName}`;
+    localStorage.setItem(key, JSON.stringify(data));
+  }, [data, roomName]);
+
+  // Persist chat to localStorage (per room)
+  useEffect(() => {
+    if (!roomName || chatHistory.length === 0) return;
+    const key = `lumina_chat_${roomName}`;
+    localStorage.setItem(key, JSON.stringify(chatHistory));
+  }, [chatHistory, roomName]);
+
+  // Persist gallery to localStorage (per room)
+  useEffect(() => {
+    if (!roomName) return;
+    const key = `lumina_gallery_${roomName}`;
+    localStorage.setItem(key, JSON.stringify(galleryItems));
+  }, [galleryItems, roomName]);
+
   // Scroll Chat
   useEffect(() => {
     if (chatScrollRef.current) {
@@ -886,6 +1027,24 @@ function App() {
     });
   };
 
+  // Notification Helpers
+  const addNotification = (notification: Omit<Notification, 'id' | 'timestamp'>) => {
+    const newNotif: Notification = {
+      ...notification,
+      id: Date.now().toString() + Math.random(),
+      timestamp: Date.now()
+    };
+    setNotifications(prev => [newNotif, ...prev].slice(0, 20)); // Keep last 20
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const clearAllNotifications = () => {
+    setNotifications([]);
+  };
+
   const addGalleryItem = (item: GalleryItem) => {
     doc.transact(() => {
       const arr = doc.getArray('gallery');
@@ -923,6 +1082,28 @@ function App() {
 
   const handleRedo = () => {
     undoManager?.redo();
+  };
+
+  const resetChat = () => {
+    if (!window.confirm("Are you sure you want to reset the chat? This will clear all messages for this room.")) return;
+
+    doc.transact(() => {
+      const arr = doc.getArray('chat');
+      // Clear all messages
+      arr.delete(0, arr.length);
+      // Add welcome message
+      arr.push([{
+        id: 'welcome-' + Date.now(),
+        role: 'model',
+        text: 'Hello! I am Lumina. Chat has been reset. Ask me to analyze trends, clean data, or generate new rows.',
+        timestamp: Date.now()
+      }]);
+    });
+
+    // Clear localStorage for this room
+    if (roomName) {
+      localStorage.removeItem(`lumina_chat_${roomName}`);
+    }
   };
 
   const handleDataUpdate = (newData: RowData[], newColumns?: string[]) => {
@@ -1254,6 +1435,13 @@ function App() {
             className="hidden"
             onChange={handleFileUpload}
           />
+
+          <NotificationCenter
+            notifications={notifications}
+            onDismiss={dismissNotification}
+            onClearAll={clearAllNotifications}
+          />
+
           <Button variant="icon" onClick={() => setShowSettings(true)} title="AI Settings">
             <Settings size={18} className={aiConfig.provider === 'openrouter' ? 'text-green-400' : ''} />
           </Button>
@@ -1362,9 +1550,18 @@ function App() {
               <span>Group AI Assistant</span>
               {aiConfig.provider === 'openrouter' && <span className="text-[9px] bg-green-900/50 text-green-400 px-1 rounded border border-green-900">OPENROUTER</span>}
             </div>
-            <button onClick={() => setShowChat(false)} className="text-gray-500 hover:text-gray-300 transition-colors">
-              <X size={18} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={resetChat}
+                className="text-gray-500 hover:text-orange-400 transition-colors p-1 rounded hover:bg-gray-700/50"
+                title="Reset chat context"
+              >
+                <RotateCcw size={16} />
+              </button>
+              <button onClick={() => setShowChat(false)} className="text-gray-500 hover:text-gray-300 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={chatScrollRef}>
