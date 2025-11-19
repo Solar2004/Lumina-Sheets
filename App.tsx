@@ -37,6 +37,7 @@ import Spreadsheet from './components/Spreadsheet';
 import ChartRenderer from './components/ChartRenderer';
 import { generateResponse } from './services/geminiService';
 import { exportToExcel, parseExcelFile, exportAiSession } from './services/excelService';
+import { autoFormatData } from './utils/autoFormatter';
 
 // Helper to generate random user colors
 const getRandomColor = () => {
@@ -366,6 +367,47 @@ const SettingsModal: React.FC<{
               </div>
             </div>
           )}
+
+          {/* AI Features Section */}
+          <div className="space-y-2 pt-4 border-t border-gray-700">
+            <label className="text-xs font-medium text-gray-400 uppercase">AI Features</label>
+
+            {/* Auto-Format Toggle */}
+            <div className="flex items-center justify-between p-3 bg-[#151618] rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+              <div className="flex-1">
+                <div className="text-sm font-medium text-white">Auto-Formatting</div>
+                <div className="text-xs text-gray-400 mt-0.5">Automatically format currencies, percentages, and dates</div>
+              </div>
+              <button
+                onClick={() => setLocalConfig({ ...localConfig, autoFormat: !localConfig.autoFormat })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${localConfig.autoFormat ? 'bg-blue-600' : 'bg-gray-600'
+                  }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${localConfig.autoFormat ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                />
+              </button>
+            </div>
+
+            {/* Smart Filters Toggle */}
+            <div className="flex items-center justify-between p-3 bg-[#151618] rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+              <div className="flex-1">
+                <div className="text-sm font-medium text-white">Smart Filters</div>
+                <div className="text-xs text-gray-400 mt-0.5">Filter data using natural language commands</div>
+              </div>
+              <button
+                onClick={() => setLocalConfig({ ...localConfig, smartFilters: !localConfig.smartFilters })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${localConfig.smartFilters ? 'bg-blue-600' : 'bg-gray-600'
+                  }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${localConfig.smartFilters ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="p-4 border-t border-gray-700 bg-[#2a2b2e] flex justify-end gap-2">
@@ -411,7 +453,9 @@ function App() {
     return saved ? JSON.parse(saved) : {
       provider: 'gemini',
       openRouterKey: '',
-      openRouterModel: 'google/gemini-2.0-flash-lite-preview-02-05:free'
+      openRouterModel: 'google/gemini-2.0-flash-lite-preview-02-05:free',
+      autoFormat: true,  // Enabled by default
+      smartFilters: true  // Enabled by default
     };
   });
 
@@ -748,20 +792,26 @@ function App() {
   };
 
   const handleDataUpdate = (newData: RowData[], newColumns?: string[]) => {
+    // Apply auto-formatting if enabled
+    let processedData = newData;
+    if (aiConfig.autoFormat) {
+      processedData = autoFormatData(newData) as RowData[];
+    }
+
     // Logic to merge columns if not provided
     let finalCols = newColumns ? [...newColumns] : [...columns];
-    if (!newColumns && newData.length > 0) {
+    if (!newColumns && processedData.length > 0) {
       const allKeys = new Set<string>();
-      newData.forEach(row => {
+      processedData.forEach(row => {
         if (row) Object.keys(row).forEach(k => allKeys.add(k));
       });
       const currentSet = new Set(columns);
       const newKeys = Array.from(allKeys).filter(k => !currentSet.has(k));
       finalCols = [...columns.filter(c => allKeys.has(c)), ...newKeys];
-    } else if (!newColumns && newData.length === 0) {
+    } else if (!newColumns && processedData.length === 0) {
       finalCols = columns;
     }
-    updateData(newData, finalCols);
+    updateData(processedData, finalCols);
   };
 
   // Pending Action Handlers

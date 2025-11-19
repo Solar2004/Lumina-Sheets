@@ -88,4 +88,7 @@ export interface AIConfig {
   provider: AIProvider;
   openRouterKey: string;
   openRouterModel: string;
+  // Feature toggles
+  autoFormat?: boolean;
+  smartFilters?: boolean;
 }
