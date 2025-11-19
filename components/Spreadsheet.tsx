@@ -9,6 +9,7 @@ interface SpreadsheetProps {
   columns: string[];
   onUpdate: (newData: RowData[], newColumns?: string[]) => void;
   onSelectionChange?: (selection: { row: number, col: string } | null) => void;
+  onFormulaFixRequest?: (row: number, col: string, formula: string, error: string) => void;
   collaborators?: Collaborator[];
 }
 
@@ -21,8 +22,8 @@ const isNumeric = (val: any): boolean => {
 };
 
 // Get display value for cell (evaluates formulas)
-const getCellDisplayValue = (value: CellValue, data: RowData[], columns: string[]): string | number => {
-  if (value === null || value === undefined) return '';
+const getCellDisplayValue = (value: CellValue, data: RowData[], columns: string[]): { display: string | number, error?: string, isFormula: boolean } => {
+  if (value === null || value === undefined) return { display: '', isFormula: false };
 
   const strValue = String(value);
 
@@ -30,16 +31,30 @@ const getCellDisplayValue = (value: CellValue, data: RowData[], columns: string[
   if (isFormula(strValue)) {
     const result = evaluateFormula(strValue, data, columns);
     if (result.error) {
-      return `#ERROR: ${result.error}`;
+      return { display: `#ERROR`, error: result.error, isFormula: true };
     }
-    if (result.value === null) return '#N/A';
-    return result.value;
+    if (result.value === null) return { display: '#N/A', error: 'No value', isFormula: true };
+    return { display: result.value, isFormula: true };
   }
 
-  return value;
+  return { display: value, isFormula: false };
 };
 
-const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSelectionChange, collaborators = [] }) => {
+// Convert column index to Excel-like letter (0 -> A, 1 -> B, etc.)
+const columnIndexToLetter = (index: number): string => {
+  let letter = '';
+  let num = index + 1; // Convert to 1-based
+
+  while (num > 0) {
+    const remainder = (num - 1) % 26;
+    letter = String.fromCharCode(65 + remainder) + letter;
+    num = Math.floor((num - 1) / 26);
+  }
+
+  return letter;
+};
+
+const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSelectionChange, onFormulaFixRequest, collaborators = [] }) => {
   // Editing State
   const [editCell, setEditCell] = useState<{ row: number, col: string } | null>(null);
   const [tempValue, setTempValue] = useState<string>('');
@@ -407,16 +422,20 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
               <th className="px-0 py-0 text-left w-12 sticky left-0 z-20 border-r border-b border-gray-600 bg-[#3c4043]">
                 <div className="h-full w-full flex items-center justify-center text-xs text-gray-400 font-medium select-none">#</div>
               </th>
-              {columns.map((col) => (
+              {columns.map((col, colIndex) => (
                 <th
                   key={col}
                   className={`
                     relative px-2 py-3 text-left text-xs font-semibold uppercase tracking-wider border-r border-b border-gray-700 group select-none cursor-pointer transition-colors
                     ${selectedColumn === col ? 'bg-blue-900/40 text-blue-300' : 'text-gray-300 hover:bg-[#3c4043]'}
                   `}
-                  style={{ width: colWidths[col] || 150 }}
                   onClick={() => handleHeaderClick(col)}
                   onDoubleClick={() => handleHeaderDoubleClick(col)}
+                  style={{
+                    width: colWidths[col] || 150,
+                    minWidth: colWidths[col] || 150,
+                    maxWidth: colWidths[col] || 150
+                  }}
                   title="Click to select, Double-click to rename"
                 >
                   {editingHeader === col ? (
@@ -430,20 +449,25 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <div className="flex items-center justify-between px-1">
-                      <span className="truncate">{col}</span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={(e) => toggleSort(col, e)}
-                          className={`p-1 rounded hover:bg-white/10 transition-colors ${sortConfig?.key === col ? 'text-blue-400 opacity-100' : 'opacity-0 group-hover:opacity-100 text-gray-500'}`}
-                          title="Toggle Sort"
-                        >
-                          {sortConfig?.key === col ? (
-                            sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
-                          ) : (
-                            <ArrowUpDown size={12} />
-                          )}
-                        </button>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between px-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-mono bg-gray-700/50 px-1 py-0.5 rounded text-gray-400">{columnIndexToLetter(colIndex)}</span>
+                          <span className="truncate">{col}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => toggleSort(col, e)}
+                            className={`p-1 rounded hover:bg-white/10 transition-colors ${sortConfig?.key === col ? 'text-blue-400 opacity-100' : 'opacity-0 group-hover:opacity-100 text-gray-500'}`}
+                            title="Toggle Sort"
+                          >
+                            {sortConfig?.key === col ? (
+                              sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                            ) : (
+                              <ArrowUpDown size={12} />
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -485,12 +509,14 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                     const value = row[col];
 
                     // Get display value (evaluates formulas)
-                    const displayValue = getCellDisplayValue(value, sortedData, columns);
+                    const cellResult = getCellDisplayValue(value, sortedData, columns);
+                    const displayValue = cellResult.display;
+                    const hasError = !!cellResult.error;
                     const valString = String(displayValue !== null && displayValue !== undefined ? displayValue : '');
-                    const isImg = isImageUrl(valString);
-                    const isNum = isNumeric(displayValue) && displayValue !== '';
+                    const isImg = !hasError && isImageUrl(valString);
+                    const isNum = !hasError && isNumeric(displayValue) && displayValue !== '';
                     const isNegative = isNum && Number(displayValue) < 0;
-                    const isFormulaCell = isFormula(String(value || ''));
+                    const isFormulaCell = cellResult.isFormula;
 
                     // Collaborator cursor check
                     const remoteUser = collaborators.find(u => u.selection?.row === rowIndex && u.selection?.col === col);
@@ -499,6 +525,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                     if (isSelected) bgClass = 'bg-blue-600/20 outline outline-2 outline-blue-500 -outline-offset-2 z-10';
                     else if (remoteUser) bgClass = 'z-10'; // Just z-index boost for border
                     else if (isColSelected) bgClass = 'bg-blue-900/10';
+                    else if (hasError) bgClass = 'bg-red-900/20';
 
                     return (
                       <td
@@ -508,8 +535,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                         ${bgClass}
                         ${isEditing ? 'p-0' : ''}
                         ${isNum ? 'text-right font-mono' : 'text-left'}
-                        ${isNegative ? 'text-red-400' : 'text-gray-300'}
-                        ${isFormulaCell ? 'bg-purple-900/10' : ''}
+                        ${isNegative ? 'text-red-400' : hasError ? 'text-red-300' : 'text-gray-300'}
+                        ${isFormulaCell && !hasError ? 'bg-purple-900/10' : ''}
                       `}
                         onClick={() => handleCellClick(rowIndex, col, value)}
                         style={{
@@ -538,7 +565,23 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                           />
                         ) : (
                           <div className="px-1 truncate min-h-[24px] flex items-center w-full h-full">
-                            {isImg ? (
+                            {hasError ? (
+                              <div className="flex items-center justify-between w-full gap-2">
+                                <span className="text-xs font-mono">{valString}: {cellResult.error}</span>
+                                {onFormulaFixRequest && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onFormulaFixRequest(rowIndex, col, String(value), cellResult.error!);
+                                    }}
+                                    className="text-[10px] px-2 py-0.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 rounded flex items-center gap-1 transition-colors shrink-0"
+                                    title="Ask AI to fix this formula"
+                                  >
+                                    <span>✨</span> Fix with AI
+                                  </button>
+                                )}
+                              </div>
+                            ) : isImg ? (
                               <div className="relative group/img w-full h-10 flex items-center justify-center bg-black/20 rounded overflow-hidden">
                                 <img src={valString} alt="Cell content" className="max-h-full max-w-full object-contain" />
                                 <a
