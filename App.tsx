@@ -1246,6 +1246,74 @@ function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleFormulaFixRequest = async (row: number, col: string, formula: string, error: string) => {
+    // Open chat if closed
+    if (!showChat) setShowChat(true);
+
+    const prompt = `I have a formula error in cell ${col}${row + 1}.
+Formula: ${formula}
+Error: ${error}
+Please fix this formula for me.`;
+
+    // Add user message to chat
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: prompt,
+      timestamp: Date.now()
+    };
+    addChatMessage(userMsg);
+    setIsThinking(true);
+
+    // Call AI
+    const apiHistory = chatHistory.map(m => ({
+      role: m.role,
+      parts: [{ text: m.text }]
+    }));
+
+    const response = await generateResponse(prompt, data, columns, apiHistory, aiConfig);
+    setIsThinking(false);
+
+    const modelMsg: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: 'model',
+      text: response.text,
+      timestamp: Date.now(),
+      groundingUrls: response.groundingUrls
+    };
+
+    // Handle CREATE_FORMULA action
+    if (response.action === AIActionType.CREATE_FORMULA && response.payload) {
+      const { cell, formula: newFormula } = response.payload;
+      // Apply the fix automatically or ask for confirmation? 
+      // For now let's apply it if it's a single cell update
+
+      // Parse cell to get row/col
+      const match = cell.match(/^([A-Z]+)(\d+)$/);
+      if (match) {
+        const colName = match[1]; // This is likely the letter, need to map to column name if possible or just rely on user providing correct context
+        // Actually, the payload should probably use the same coordinate system.
+        // Let's assume the AI returns a valid formula.
+
+        // We need to update the data.
+        // Since we don't have a direct "updateCell" method exposed easily here without finding the index,
+        // we might need to rely on the user copying it or implementing a specific update handler.
+
+        // BUT, we can try to be smart.
+        // If the AI returns a CREATE_FORMULA action, we can try to apply it.
+
+        // For now, let's just show the message and the formula.
+        // The user can copy-paste it.
+        // OR better: we can add a "Apply Fix" button in the chat message?
+        // That's complex.
+
+        // Let's just ensure the AI response is helpful.
+      }
+    }
+
+    addChatMessage(modelMsg);
+  };
+
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isThinking) return;
 
@@ -1542,6 +1610,7 @@ function App() {
                 columns={columns}
                 onUpdate={handleDataUpdate}
                 onSelectionChange={updateSelection}
+                onFormulaFixRequest={handleFormulaFixRequest}
                 collaborators={collaborators}
               />
             </div>
