@@ -1246,6 +1246,23 @@ function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // Helper to convert cell reference (e.g., "A1") to coordinates
+  const cellToCoordinates = (cellRef: string): { row: number, colIndex: number } | null => {
+    const match = cellRef.match(/^([A-Z]+)(\d+)$/);
+    if (!match) return null;
+    const colStr = match[1];
+    const rowStr = match[2];
+
+    let colIndex = 0;
+    for (let i = 0; i < colStr.length; i++) {
+      colIndex = colIndex * 26 + (colStr.charCodeAt(i) - 64);
+    }
+    colIndex -= 1; // 0-based
+
+    const row = parseInt(rowStr) - 1; // 0-based
+    return { row, colIndex };
+  };
+
   const handleFormulaFixRequest = async (row: number, col: string, formula: string, error: string) => {
     // Open chat if closed
     if (!showChat) setShowChat(true);
@@ -1282,36 +1299,44 @@ Please fix this formula for me.`;
       groundingUrls: response.groundingUrls
     };
 
-    // Handle CREATE_FORMULA action
-    if (response.action === AIActionType.CREATE_FORMULA && response.payload) {
-      const { cell, formula: newFormula } = response.payload;
-      // Apply the fix automatically or ask for confirmation? 
-      // For now let's apply it if it's a single cell update
+    addChatMessage(modelMsg);
 
-      // Parse cell to get row/col
-      const match = cell.match(/^([A-Z]+)(\d+)$/);
-      if (match) {
-        const colName = match[1]; // This is likely the letter, need to map to column name if possible or just rely on user providing correct context
-        // Actually, the payload should probably use the same coordinate system.
-        // Let's assume the AI returns a valid formula.
+    // Process Actions
+    const actionsToProcess = response.actions || (response.action !== AIActionType.NONE ? [{ type: response.action, payload: response.payload }] : []);
 
-        // We need to update the data.
-        // Since we don't have a direct "updateCell" method exposed easily here without finding the index,
-        // we might need to rely on the user copying it or implementing a specific update handler.
+    if (actionsToProcess.length > 0) {
+      // We'll apply formula fixes directly
+      const newData = [...data];
+      let hasUpdates = false;
 
-        // BUT, we can try to be smart.
-        // If the AI returns a CREATE_FORMULA action, we can try to apply it.
+      actionsToProcess.forEach(action => {
+        if (action.type === AIActionType.CREATE_FORMULA && action.payload) {
+          const { cell, formula: newFormula } = action.payload;
+          const coords = cellToCoordinates(cell);
 
-        // For now, let's just show the message and the formula.
-        // The user can copy-paste it.
-        // OR better: we can add a "Apply Fix" button in the chat message?
-        // That's complex.
+          if (coords) {
+            const { row, colIndex } = coords;
+            if (colIndex < columns.length && row < newData.length) {
+              const colName = columns[colIndex];
+              const newRow = { ...newData[row] };
+              newRow[colName] = newFormula;
+              newData[row] = newRow;
+              hasUpdates = true;
+            }
+          }
+        }
+      });
 
-        // Let's just ensure the AI response is helpful.
+      if (hasUpdates) {
+        updateData(newData);
+        addChatMessage({
+          id: Date.now().toString() + '-fix',
+          role: 'model',
+          text: '✅ I have applied the formula fixes.',
+          timestamp: Date.now()
+        });
       }
     }
-
-    addChatMessage(modelMsg);
   };
 
   const handleSendMessage = async () => {
@@ -1347,39 +1372,98 @@ Please fix this formula for me.`;
       groundingUrls: response.groundingUrls
     };
 
+    addChatMessage(modelMsg);
+
     // Handle Actions
-    if (response.action === AIActionType.UPDATE_DATA && response.payload) {
-      // INTERCEPT UPDATE: Ask for confirmation
+    const actionsToProcess = response.actions || (response.action !== AIActionType.NONE ? [{ type: response.action, payload: response.payload }] : []);
+
+    // We need to handle updates carefully. 
+    // If there's an UPDATE_DATA, it overrides everything.
+    // If there are CREATE_FORMULA actions, we can batch them.
+
+    let pendingDataUpdate: RowData[] | null = null;
+    let pendingDescription = "";
+
+    // Check for UPDATE_DATA first as it's the most destructive
+    const updateAction = actionsToProcess.find(a => a.type === AIActionType.UPDATE_DATA);
+    if (updateAction) {
       setPendingUpdate({
-        payload: response.payload,
+        payload: updateAction.payload,
         description: response.text
       });
-      // We don't add the success message yet, just the explanation
-
-    } else if (response.action === AIActionType.CREATE_CHART && response.payload) {
-      modelMsg.chartConfig = response.payload;
-      addGalleryItem({
-        id: Date.now().toString(),
-        type: 'chart',
-        title: response.payload.title || 'New Chart',
-        timestamp: Date.now(),
-        data: response.payload
-      });
-
-    } else if (response.action === AIActionType.SHOW_INSIGHTS && response.payload) {
-      modelMsg.insightData = response.payload;
-      const item: GalleryItem = {
-        id: Date.now().toString(),
-        type: 'insight',
-        title: 'Analysis Result',
-        timestamp: Date.now(),
-        data: response.payload
-      };
-      addGalleryItem(item);
-      setExpandedGalleryItem(item);
+      return; // Stop processing other actions if we have a full data update pending
     }
 
-    addChatMessage(modelMsg);
+    // Handle other actions
+    const formulaUpdates: { row: number, col: string, val: string }[] = [];
+
+    actionsToProcess.forEach(action => {
+      if (action.type === AIActionType.CREATE_CHART && action.payload) {
+        // Attach chart to message (visual only in chat for now, but also add to gallery)
+        // We can't easily attach to the existing message object in state without updating it.
+        // But we can add a gallery item.
+        addGalleryItem({
+          id: Date.now().toString() + Math.random(),
+          type: 'chart',
+          title: action.payload.title || 'New Chart',
+          timestamp: Date.now(),
+          data: action.payload
+        });
+
+        // Also update the chat message to show it has a chart? 
+        // The current implementation adds it to gallery.
+        // Let's keep it simple.
+
+      } else if (action.type === AIActionType.SHOW_INSIGHTS && action.payload) {
+        const item: GalleryItem = {
+          id: Date.now().toString() + Math.random(),
+          type: 'insight',
+          title: 'Analysis Result',
+          timestamp: Date.now(),
+          data: action.payload
+        };
+        addGalleryItem(item);
+        setExpandedGalleryItem(item);
+
+      } else if (action.type === AIActionType.CREATE_FORMULA && action.payload) {
+        const { cell, formula } = action.payload;
+        const coords = cellToCoordinates(cell);
+        if (coords) {
+          const { row, colIndex } = coords;
+          if (colIndex < columns.length) {
+            formulaUpdates.push({ row, col: columns[colIndex], val: formula });
+          }
+        }
+      }
+    });
+
+    // Apply formula updates if any
+    if (formulaUpdates.length > 0) {
+      const newData = [...data];
+      // Ensure rows exist
+      const maxRow = Math.max(...formulaUpdates.map(u => u.row));
+      while (newData.length <= maxRow) {
+        const newRow: RowData = {};
+        columns.forEach(c => newRow[c] = null);
+        newData.push(newRow);
+      }
+
+      formulaUpdates.forEach(u => {
+        if (newData[u.row]) {
+          const newRow = { ...newData[u.row] };
+          newRow[u.col] = u.val;
+          newData[u.row] = newRow;
+        }
+      });
+
+      updateData(newData);
+      addChatMessage({
+        id: Date.now().toString() + '-formula',
+        role: 'model',
+        text: `✅ Applied ${formulaUpdates.length} formula(s).`,
+        timestamp: Date.now()
+      });
+    }
   };
 
   const copyRoomLink = async () => {

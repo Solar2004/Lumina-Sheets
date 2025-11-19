@@ -212,6 +212,9 @@ export function evaluateFormula(formula: string, data: RowData[], columns: strin
         }
 
         const result = eval(evalExpr);
+        if (!isFinite(result) || isNaN(result)) {
+            return { value: null, error: 'Calculation Error' };
+        }
         return { value: result };
     } catch (error) {
         return { value: null, error: 'Evaluation error' };

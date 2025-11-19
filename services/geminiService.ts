@@ -107,43 +107,43 @@ const processAIResponse = (fullText: string, groundingChunks: any[] = []): AIRes
     .filter((u): u is { title: string, uri: string } => u !== null && u.uri !== '');
 
   // Parse JSON actions
-  const jsonMatch = fullText.match(/```json([\s\S]*?)```/);
+  const jsonMatches = [...fullText.matchAll(/```json([\s\S]*?)```/g)];
 
-  let action = AIActionType.NONE;
-  let payload = undefined;
+  const actions: { type: AIActionType; payload: any }[] = [];
   let displayText = fullText;
 
-  if (jsonMatch) {
+  for (const match of jsonMatches) {
     try {
-      const jsonContent = cleanJson(jsonMatch[1]);
+      const jsonContent = cleanJson(match[1]);
       const parsed = JSON.parse(jsonContent);
 
       if (parsed.type === "UPDATE_DATA") {
-        action = AIActionType.UPDATE_DATA;
-        payload = parsed.data;
-        displayText = fullText.replace(jsonMatch[0], '').trim();
-        if (!displayText) displayText = "I've updated the spreadsheet as requested.";
+        actions.push({ type: AIActionType.UPDATE_DATA, payload: parsed.data });
       } else if (parsed.type === "CREATE_CHART") {
-        action = AIActionType.CREATE_CHART;
-        payload = parsed.config;
-        displayText = fullText.replace(jsonMatch[0], '').trim();
-        if (!displayText) displayText = "Here is the visualization.";
+        actions.push({ type: AIActionType.CREATE_CHART, payload: parsed.config });
       } else if (parsed.type === "SHOW_INSIGHTS") {
-        action = AIActionType.SHOW_INSIGHTS;
-        payload = parsed.config;
-        displayText = fullText.replace(jsonMatch[0], '').trim();
-        if (!displayText) displayText = "I've analyzed your data.";
+        actions.push({ type: AIActionType.SHOW_INSIGHTS, payload: parsed.config });
+      } else if (parsed.type === "CREATE_FORMULA") {
+        actions.push({ type: AIActionType.CREATE_FORMULA, payload: parsed });
       }
+
+      // Remove the JSON block from display text
+      displayText = displayText.replace(match[0], '').trim();
     } catch (e) {
       console.error("Failed to parse AI JSON action:", e);
       displayText += "\n\n(Error: Generated invalid JSON action.)";
     }
   }
 
+  if (!displayText && actions.length > 0) {
+    displayText = "I've processed your request.";
+  }
+
   return {
     text: displayText,
-    action,
-    payload,
+    action: actions.length > 0 ? actions[0].type : AIActionType.NONE,
+    payload: actions.length > 0 ? actions[0].payload : undefined,
+    actions,
     groundingUrls
   };
 };

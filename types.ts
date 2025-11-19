@@ -80,6 +80,7 @@ export interface AIResponseParsed {
   text: string;
   action: AIActionType;
   payload?: any;
+  actions?: { type: AIActionType; payload: any }[];
   groundingUrls?: Array<{ title: string, uri: string }>;
 }
 
