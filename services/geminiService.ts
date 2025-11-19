@@ -92,13 +92,23 @@ Your goal is to manipulate data, generate deep insights, and visualize trends wi
 - COUNT(range) - Count numbers
 - MEDIAN(range) - Find median
 - PRODUCT(range) - Multiply numbers
-- Arithmetic: =B2+C2, =B2*C2, etc.
+- Arithmetic: =B2+C2, =B2-C2, =B2*C2, =B2/C2
+- Percentage: =(B2/C2)*100
+- Complex: =(B2+C2)*D2
+
+**Formula Examples:**
+- **Subtraction**: \`=B2-C2\` (Calculate difference)
+- **Multiplication**: \`=B2*C2\` (Calculate product)
+- **Division**: \`=B2/C2\` (Calculate ratio)
+- **Profit**: \`=Revenue-Cost\` (e.g., \`=B2-C2\`)
+- **Margin**: \`=(Profit/Revenue)*100\` (e.g., \`=(D2/B2)*100\`)
 
 **General Rules:**
 - **Accuracy**: If calculating, be precise.
 - **Completeness**: When updating data, return the FULL dataset (up to reasonable limits) or the modified subset if appending.
 - **Tone**: Professional, helpful, data-driven.
 - **Chart Intelligence**: When creating charts, consider the AI recommendation provided in the context.
+- **Simplicity**: Do NOT use \`VALUE()\` or \`SUBSTITUTE()\` to clean currency symbols (e.g., "$"). The engine handles this automatically. Use simple cell references (e.g., \`=B2-C2\`) instead of complex parsing.
 `;
 
 const processAIResponse = (fullText: string, groundingChunks: any[] = []): AIResponseParsed => {
