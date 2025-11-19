@@ -505,6 +505,7 @@ function App() {
       const yColumnsArray = doc.getArray('columns');
       const yChatArray = doc.getArray('chat');
       const yGalleryArray = doc.getArray('gallery');
+      const yMeta = doc.getMap('meta'); // Metadata map for initialization flag
 
       // Listen to connection events
       console.log('👂 [WEBRTC] Setting up event listeners...');
@@ -528,30 +529,38 @@ function App() {
         });
       }
 
-      // Initialize Data if Empty (First user in room)
+      // Initialize Data if Empty (First user in room) - FIXED: Use atomic flag
       newProvider.on('synced', (synced: any) => {
         console.log('🔄 [SYNC] Sync event fired, synced:', synced);
 
-        if (synced && yDataArray.length === 0) {
-          console.log('📝 [SYNC] First user in room - populating default data');
-          doc.transact(() => {
-            // Populate with default data
-            DEFAULT_DATA.forEach(row => yDataArray.push([row]));
-            Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
-            yChatArray.push([{
-              id: 'welcome',
-              role: 'model',
-              text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
-              timestamp: Date.now()
-            }]);
-          });
-          console.log('✅ [SYNC] Default data populated');
-        } else {
-          console.log('📊 [SYNC] Data already exists, rows:', yDataArray.length);
-        }
+        if (synced) {
+          // Check if data has been initialized by ANY user (atomic check)
+          const hasBeenInitialized = yMeta.get('initialized');
 
-        setConnectionStatus('connected');
-        console.log('🟢 [STATUS] Connection status set to: connected');
+          if (!hasBeenInitialized && yDataArray.length === 0) {
+            console.log('📝 [SYNC] First user in room - populating default data');
+            doc.transact(() => {
+              // Set flag atomically WITHIN the transaction
+              yMeta.set('initialized', true);
+
+              // Populate with default data
+              DEFAULT_DATA.forEach(row => yDataArray.push([row]));
+              Object.keys(DEFAULT_DATA[0]).forEach(col => yColumnsArray.push([col]));
+              yChatArray.push([{
+                id: 'welcome',
+                role: 'model',
+                text: 'Hello! I am Lumina. I am synced via WebRTC. Ask me to analyze trends, clean data, or generate new rows.',
+                timestamp: Date.now()
+              }]);
+            });
+            console.log('✅ [SYNC] Default data populated');
+          } else {
+            console.log('📊 [SYNC] Data already initialized or has data');
+          }
+
+          setConnectionStatus('connected');
+          console.log('🟢 [STATUS] Connection status set to: connected');
+        }
       });
 
       // Bind Yjs Types to React State
@@ -1161,7 +1170,7 @@ function App() {
 
         {/* Chat Sidebar */}
         <div
-          className={`fixed inset-y-0 right-0 w-96 bg-[#28292c] border-l border-gray-700 shadow-2xl flex flex-col z-30 mt-[61px] transform transition-transform duration-300 ease-cubic ${showChat ? 'translate-x-0' : 'translate-x-full'}`}
+          className={`fixed top-[61px] bottom-0 right-0 w-96 bg-[#28292c] border-l border-gray-700 shadow-2xl flex flex-col z-30 transform transition-transform duration-300 ease-cubic ${showChat ? 'translate-x-0' : 'translate-x-full'}`}
         >
           <div className="p-4 border-b border-gray-700 flex items-center justify-between bg-[#2d2e31] shadow-sm shrink-0">
             <div className="flex items-center gap-2 text-blue-400 font-medium">
