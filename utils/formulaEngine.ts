@@ -84,10 +84,10 @@ function getCellValue(cellRef: string, data: RowData[], columns: string[]): numb
     const row = data[rowIndex];
     const value = row[actualColumnName];
 
-    if (value === null || value === undefined) return null;
+    if (value === null || value === undefined || value === '') return 0;
 
     const num = parseFloat(String(value).replace(/[$,]/g, ''));
-    return isNaN(num) ? null : num;
+    return isNaN(num) ? 0 : num;
 }
 
 // Evaluate formula functions
