@@ -1011,24 +1011,42 @@ function App() {
     localStorage.setItem(key, JSON.stringify(galleryItems));
   }, [galleryItems, roomName]);
 
-  // Persist filename to localStorage (per room)
-  useEffect(() => {
-    if (!roomName) return;
-    const key = `lumina_filename_${roomName}`;
-    localStorage.setItem(key, filename);
-  }, [filename, roomName]);
+  // Filename persistence with ref to prevent initial save
+  const filenameLoadedRef = useRef(false);
+  const currentRoomRef = useRef(roomName);
 
-  // Load filename from localStorage on room change
+  // Load filename when room changes
   useEffect(() => {
     if (!roomName) return;
+
     const key = `lumina_filename_${roomName}`;
     const saved = localStorage.getItem(key);
+
+    filenameLoadedRef.current = false; // Reset flag
+
     if (saved) {
+      console.log('📝 [FILENAME] Loading saved filename:', saved);
       setFilename(saved);
     } else {
+      console.log('📝 [FILENAME] No saved filename, using default');
       setFilename("Untitled Project");
     }
-  }, [roomName]);
+
+    // Mark as loaded after a short delay to allow setFilename to complete
+    setTimeout(() => {
+      filenameLoadedRef.current = true;
+      currentRoomRef.current = roomName;
+    }, 100);
+  }, [roomName]); // Only run when roomName changes
+
+  // Save filename only after it's been loaded and user changes it
+  useEffect(() => {
+    if (!roomName || !filenameLoadedRef.current || currentRoomRef.current !== roomName) return;
+
+    const key = `lumina_filename_${roomName}`;
+    localStorage.setItem(key, filename);
+    console.log('💾 [FILENAME] Saved:', filename);
+  }, [filename, roomName]);
 
   // Scroll Chat
   useEffect(() => {
