@@ -92,3 +92,10 @@ export interface AIConfig {
   autoFormat?: boolean;
   smartFilters?: boolean;
 }
+
+export interface TurnConfig {
+  enabled: boolean;
+  urls: string;
+  username?: string;
+  credential?: string;
+}

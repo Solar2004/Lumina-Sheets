@@ -32,7 +32,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 
-import { DEFAULT_DATA, RowData, ChatMessage, AIActionType, InsightData, GalleryItem, ChartConfig, Collaborator, AIConfig, AIProvider } from './types';
+import { DEFAULT_DATA, RowData, ChatMessage, AIActionType, InsightData, GalleryItem, ChartConfig, Collaborator, AIConfig, AIProvider, TurnConfig } from './types';
 import Spreadsheet from './components/Spreadsheet';
 import ChartRenderer from './components/ChartRenderer';
 import { generateResponse } from './services/geminiService';
@@ -292,10 +292,13 @@ const GalleryModal: React.FC<{
 // Component: Settings Modal
 const SettingsModal: React.FC<{
   config: AIConfig,
+  turnConfig: TurnConfig,
   onSave: (cfg: AIConfig) => void,
+  onSaveTurn: (cfg: TurnConfig) => void,
   onClose: () => void
-}> = ({ config, onSave, onClose }) => {
+}> = ({ config, turnConfig, onSave, onSaveTurn, onClose }) => {
   const [localConfig, setLocalConfig] = useState(config);
+  const [localTurnConfig, setLocalTurnConfig] = useState(turnConfig);
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -408,11 +411,87 @@ const SettingsModal: React.FC<{
               </button>
             </div>
           </div>
+
+          {/* Network Configuration Section */}
+          <div className="space-y-2 pt-4 border-t border-gray-700">
+            <label className="text-xs font-medium text-gray-400 uppercase">Network Configuration</label>
+
+            {/* Info about STUN */}
+            <div className="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3 mb-3">
+              <div className="flex gap-2 text-blue-300">
+                <Wifi size={16} className="mt-0.5" />
+                <div className="text-xs leading-relaxed">
+                  <strong>STUN servers</strong> are pre-configured for NAT traversal. <br />
+                  <span className="opacity-70">Add a TURN server below for strict firewalls or VPN users.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* TURN Enable Toggle */}
+            <div className="flex items-center justify-between p-3 bg-[#151618] rounded-lg border border-gray-700 hover:border-gray-600 transition-colors">
+              <div className="flex-1">
+                <div className="text-sm font-medium text-white">TURN Server (Advanced)</div>
+                <div className="text-xs text-gray-400 mt-0.5">Use relay server for strict firewall environments</div>
+              </div>
+              <button
+                onClick={() => setLocalTurnConfig({ ...localTurnConfig, enabled: !localTurnConfig.enabled })}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${localTurnConfig.enabled ? 'bg-blue-600' : 'bg-gray-600'
+                  }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${localTurnConfig.enabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                />
+              </button>
+            </div>
+
+            {/* TURN Configuration Fields */}
+            {localTurnConfig.enabled && (
+              <div className="space-y-3 pl-3 animate-in slide-in-from-top-2 duration-200">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-400">TURN Server URL</label>
+                  <input
+                    type="text"
+                    className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600 font-mono"
+                    placeholder="turn:a.relay.metered.ca:80"
+                    value={localTurnConfig.urls}
+                    onChange={(e) => setLocalTurnConfig({ ...localTurnConfig, urls: e.target.value })}
+                  />
+                  <p className="text-[10px] text-gray-500">Example: turn:your-server.com:3478</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-400">Username</label>
+                  <input
+                    type="text"
+                    className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                    placeholder="your-username"
+                    value={localTurnConfig.username || ''}
+                    onChange={(e) => setLocalTurnConfig({ ...localTurnConfig, username: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-400">Credential</label>
+                  <input
+                    type="password"
+                    className="w-full bg-[#151618] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                    placeholder="your-credential"
+                    value={localTurnConfig.credential || ''}
+                    onChange={(e) => setLocalTurnConfig({ ...localTurnConfig, credential: e.target.value })}
+                  />
+                </div>
+                <div className="bg-yellow-900/20 border border-yellow-900/50 rounded-lg p-2">
+                  <p className="text-[10px] text-yellow-300">
+                    💡 Get free TURN at <a href="https://www.metered.ca/tools/openrelay/" target="_blank" rel="noopener noreferrer" className="underline hover:text-yellow-200">metered.ca</a>
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="p-4 border-t border-gray-700 bg-[#2a2b2e] flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={() => { onSave(localConfig); onClose(); }}>Save Changes</Button>
+          <Button variant="primary" onClick={() => { onSave(localConfig); onSaveTurn(localTurnConfig); onClose(); }}>Save Changes</Button>
         </div>
       </div>
     </div>
@@ -456,6 +535,17 @@ function App() {
       openRouterModel: 'google/gemini-2.0-flash-lite-preview-02-05:free',
       autoFormat: true,  // Enabled by default
       smartFilters: true  // Enabled by default
+    };
+  });
+
+  // TURN Server Configuration (Persisted in LocalStorage)
+  const [turnConfig, setTurnConfig] = useState<TurnConfig>(() => {
+    const saved = localStorage.getItem('lumina_turn_config');
+    return saved ? JSON.parse(saved) : {
+      enabled: false,
+      urls: 'turn:a.relay.metered.ca:80',
+      username: '',
+      credential: ''
     };
   });
 
@@ -522,14 +612,32 @@ function App() {
         }
       };
 
+      // Build ICE servers array
+      const iceServers: RTCIceServer[] = [
+        // Google STUN Servers (Free & Reliable)
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+      ];
+
+      // Add TURN server if configured
+      if (turnConfig.enabled && turnConfig.urls && turnConfig.username && turnConfig.credential) {
+        iceServers.push({
+          urls: turnConfig.urls,
+          username: turnConfig.username,
+          credential: turnConfig.credential
+        });
+        console.log('🔄 [TURN] TURN server configured:', turnConfig.urls);
+      }
+
       // Create provider - will use patched WebSocket
       const newProvider = new WebrtcProvider(room, doc, {
         signaling: [signalingServer],
         peerOpts: {
           config: {
-            iceServers: [
-              { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
-            ]
+            iceServers
           }
         }
       });
@@ -722,6 +830,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem('lumina_ai_config', JSON.stringify(aiConfig));
   }, [aiConfig]);
+
+  // Save TURN Config
+  useEffect(() => {
+    localStorage.setItem('lumina_turn_config', JSON.stringify(turnConfig));
+  }, [turnConfig]);
 
   // --- Handlers (Update Yjs) ---
 
@@ -1009,7 +1122,7 @@ function App() {
 
       {/* Modals */}
       {expandedGalleryItem && <GalleryModal item={expandedGalleryItem} data={data} onClose={() => setExpandedGalleryItem(null)} onDelete={deleteGalleryItem} />}
-      {showSettings && <SettingsModal config={aiConfig} onSave={setAiConfig} onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsModal config={aiConfig} turnConfig={turnConfig} onSave={setAiConfig} onSaveTurn={setTurnConfig} onClose={() => setShowSettings(false)} />}
 
       {/* Room Full Modal */}
       {roomFull && (
