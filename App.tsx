@@ -569,17 +569,24 @@ function App() {
     console.log('🌍 [ENV] PROD:', import.meta.env.PROD);
 
     // Generate room code if not provided
+    console.log('🔍 [URL] Current URL:', window.location.href);
+    console.log('🔍 [URL] Search params:', window.location.search);
     const params = new URLSearchParams(window.location.search);
     let room = params.get('room');
+    console.log('🔍 [ROOM] Param from URL:', room);
+
     if (!room) {
       room = generateRoomCode();
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.set('room', room);
       window.history.pushState({}, '', newUrl.toString());
       console.log('🎲 [ROOM] Generated new room:', room);
+      console.log('🎲 [ROOM] Updated URL to:', newUrl.toString());
+    } else {
+      console.log('✅ [ROOM] Using room from URL:', room);
     }
     setRoomName(room);
-    console.log('🏠 [ROOM] Room Name:', room);
+    console.log('🏠 [ROOM] Room Name SET TO:', room);
 
     try {
       console.log('🔌 [WEBRTC] Creating WebrtcProvider...');
