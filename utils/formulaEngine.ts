@@ -59,6 +59,15 @@ function parseRange(range: string): string[] | null {
     return cells;
 }
 
+// Convert column letter to index (A=0, B=1, etc.)
+function columnLetterToIndex(letter: string): number {
+    let num = 0;
+    for (let i = 0; i < letter.length; i++) {
+        num = num * 26 + (letter.charCodeAt(i) - 64);
+    }
+    return num - 1; // Convert to 0-indexed
+}
+
 // Get cell value from data
 function getCellValue(cellRef: string, data: RowData[], columns: string[]): number | null {
     const parsed = parseCellRef(cellRef);
@@ -67,8 +76,13 @@ function getCellValue(cellRef: string, data: RowData[], columns: string[]): numb
     const rowIndex = parsed.row - 1; // Convert to 0-indexed
     if (rowIndex < 0 || rowIndex >= data.length) return null;
 
+    // Map column letter to actual column name
+    const colIndex = columnLetterToIndex(parsed.col);
+    if (colIndex < 0 || colIndex >= columns.length) return null;
+
+    const actualColumnName = columns[colIndex];
     const row = data[rowIndex];
-    const value = row[parsed.col];
+    const value = row[actualColumnName];
 
     if (value === null || value === undefined) return null;
 
