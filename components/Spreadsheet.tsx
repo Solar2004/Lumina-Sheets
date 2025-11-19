@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { RowData, CellValue, Collaborator } from '../types';
 import { Plus, Trash2, Image as ImageIcon, ArrowUp, ArrowDown, ArrowUpDown, Edit2 } from 'lucide-react';
 import { evaluateFormula, isFormula } from '../utils/formulaEngine';
+import { detectPattern, generateNextValues } from '../utils/autoFill';
 
 interface SpreadsheetProps {
   data: RowData[];
@@ -73,6 +74,15 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+
+  // Drag-to-Fill State
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragRange, setDragRange] = useState<{
+    startRow: number;
+    endRow: number;
+    col: string;
+  } | null>(null);
+  const [detectedPattern, setDetectedPattern] = useState<string | null>(null);
 
   const resizingRef = useRef<{ col: string, startX: number, startWidth: number } | null>(null);
 
@@ -309,6 +319,100 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
     setEditCell(null);
   };
 
+  // --- Drag-to-Fill Functions ---
+  const handleFillHandleMouseDown = (e: React.MouseEvent, rowIndex: number, col: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setIsDragging(true);
+    setDragRange({
+      startRow: rowIndex,
+      endRow: rowIndex,
+      col
+    });
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const element = document.elementFromPoint(e.clientX, e.clientY);
+      const cellElement = element?.closest('[data-row-index]');
+
+      if (cellElement) {
+        const targetRow = parseInt(cellElement.getAttribute('data-row-index') || '0');
+        if (targetRow >= rowIndex) {
+          setDragRange(prev => prev ? { ...prev, endRow: targetRow } : null);
+
+          // Update detected pattern
+          const sourceValues: CellValue[] = [];
+          for (let i = 0; i <= rowIndex; i++) {
+            sourceValues.push(sortedData[i]?.[col] || null);
+          }
+          const pattern = detectPattern(sourceValues);
+          setDetectedPattern(pattern ? `${pattern.description} (${pattern.confidence}% confident)` : null);
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (dragRange && dragRange.endRow > dragRange.startRow) {
+        performAutoFill();
+      }
+      setIsDragging(false);
+      setDragRange(null);
+      setDetectedPattern(null);
+
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const performAutoFill = () => {
+    if (!dragRange) return;
+
+    const { startRow, endRow, col } = dragRange;
+
+    // Only fill downwards
+    if (endRow <= startRow) return;
+
+    // Get source values up to startRow
+    const sourceValues: CellValue[] = [];
+    for (let i = 0; i <= startRow; i++) {
+      sourceValues.push(sortedData[i]?.[col] || null);
+    }
+
+    // Detect pattern and generate values
+    const count = endRow - startRow;
+    const newValues = generateNextValues(sourceValues, count, startRow);
+
+    // Update data
+    const newData = [...data];
+
+    for (let i = 0; i < count; i++) {
+      const targetRow = startRow + i + 1;
+
+      if (targetRow < sortedData.length) {
+        const visualRow = sortedData[targetRow];
+        const originalIndex = data.indexOf(visualRow);
+
+        if (originalIndex !== -1) {
+          newData[originalIndex] = {
+            ...newData[originalIndex],
+            [col]: newValues[i]
+          };
+        }
+      } else {
+        // Create new rows if needed
+        const newRow: RowData = {};
+        columns.forEach(c => newRow[c] = c === col ? newValues[i] : null);
+        newData.push(newRow);
+      }
+    }
+
+    onUpdate(newData);
+  };
+
+
   // --- Toolbar Actions ---
   const addRow = () => {
     const newRow: RowData = {};
@@ -487,6 +591,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
               return (
                 <tr
                   key={rowIndex}
+                  data-row-index={rowIndex}
                   className={`
                   transition-colors group
                   ${selectedRowIndex === rowIndex ? 'bg-blue-900/30' : 'hover:bg-gray-800/50'}
@@ -521,11 +626,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                     // Collaborator cursor check
                     const remoteUser = collaborators.find(u => u.selection?.row === rowIndex && u.selection?.col === col);
 
+                    // Check if this cell is in drag range
+                    const isInDragRange = dragRange &&
+                      col === dragRange.col &&
+                      rowIndex > dragRange.startRow &&
+                      rowIndex <= dragRange.endRow;
+
                     let bgClass = '';
-                    if (isSelected) bgClass = 'bg-blue-600/20 outline outline-2 outline-blue-500 -outline-offset-2 z-10';
-                    else if (remoteUser) bgClass = 'z-10'; // Just z-index boost for border
-                    else if (isColSelected) bgClass = 'bg-blue-900/10';
-                    else if (hasError) bgClass = 'bg-red-900/20';
+                    if (isSelected) {
+                      bgClass = 'bg-blue-600/20 outline outline-2 outline-blue-500 -outline-offset-2 z-10';
+                    } else if (isInDragRange) {
+                      bgClass = 'bg-blue-500/10 outline outline-2 outline-dashed outline-blue-400/60 -outline-offset-2';
+                    } else if (remoteUser) {
+                      bgClass = 'z-10'; // Just z-index boost for border
+                    } else if (isColSelected) {
+                      bgClass = 'bg-blue-900/10';
+                    } else if (hasError) {
+                      bgClass = 'bg-red-900/20';
+                    }
 
                     return (
                       <td
@@ -601,6 +719,16 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
                             )}
                           </div>
                         )}
+
+                        {/* Drag-to-Fill Handle */}
+                        {isSelected && !isEditing && (
+                          <div
+                            className="absolute bottom-0 right-0 w-2 h-2 bg-blue-500 cursor-crosshair hover:w-2.5 hover:h-2.5 rounded-sm z-50 transition-all border border-white shadow-sm"
+                            onMouseDown={(e) => handleFillHandleMouseDown(e, rowIndex, col)}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Drag to fill"
+                          />
+                        )}
                       </td>
                     );
                   })}
@@ -644,6 +772,13 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ data, columns, onUpdate, onSe
           <span>Ready</span>
         )}
       </div>
+
+      {/* Pattern Detection Tooltip */}
+      {detectedPattern && (
+        <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-3 py-2 rounded-lg shadow-xl text-xs font-medium z-50 animate-in fade-in slide-in-from-bottom-2 duration-200 border border-blue-400/30">
+          📊 {detectedPattern}
+        </div>
+      )}
     </div>
   );
 };

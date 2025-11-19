@@ -2,6 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { AIActionType, AIResponseParsed, RowData, ChartConfig, AIConfig } from '../types';
 import { analyzeDataForChart, getQuickChartSuggestion } from '../utils/chartRecommender';
+import { getFormulaContextForAI } from '../utils/formulaContext';
 
 // Helper to sanitize JSON from potential markdown code blocks
 const cleanJson = (text: string): string => {
@@ -84,24 +85,7 @@ Your goal is to manipulate data, generate deep insights, and visualize trends wi
 }
 \`\`\`
 
-**Available Formula Functions:**
-- SUM(range) - Add numbers
-- AVERAGE(range) - Calculate average
-- MAX(range) - Find maximum
-- MIN(range) - Find minimum
-- COUNT(range) - Count numbers
-- MEDIAN(range) - Find median
-- PRODUCT(range) - Multiply numbers
-- Arithmetic: =B2+C2, =B2-C2, =B2*C2, =B2/C2
-- Percentage: =(B2/C2)*100
-- Complex: =(B2+C2)*D2
-
-**Formula Examples:**
-- **Subtraction**: \`=B2-C2\` (Calculate difference)
-- **Multiplication**: \`=B2*C2\` (Calculate product)
-- **Division**: \`=B2/C2\` (Calculate ratio)
-- **Profit**: \`=Revenue-Cost\` (e.g., \`=B2-C2\`)
-- **Margin**: \`=(Profit/Revenue)*100\` (e.g., \`=(D2/B2)*100\`)
+${getFormulaContextForAI()}
 
 **General Rules:**
 - **Accuracy**: If calculating, be precise.
