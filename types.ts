@@ -10,16 +10,16 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
   timestamp: number;
-  chartConfig?: ChartConfig; 
-  insightData?: InsightData; 
+  chartConfig?: ChartConfig;
+  insightData?: InsightData;
   isError?: boolean;
-  groundingUrls?: Array<{title: string, uri: string}>;
+  groundingUrls?: Array<{ title: string, uri: string }>;
 }
 
 export interface ChartConfig {
   type: 'bar' | 'line' | 'area' | 'pie' | 'scatter';
   dataKeyX: string;
-  dataKeyY: string | string[]; 
+  dataKeyY: string | string[];
   title: string;
   description?: string;
 }
@@ -38,11 +38,17 @@ export interface GalleryItem {
   data: ChartConfig | InsightData;
 }
 
+export interface CursorPosition {
+  x: number;
+  y: number;
+}
+
 export interface Collaborator {
   clientId: number;
   name: string;
   color: string;
   selection?: { row: number; col: string } | null;
+  cursor?: CursorPosition;
 }
 
 export interface AppState {
@@ -73,7 +79,7 @@ export interface AIResponseParsed {
   text: string;
   action: AIActionType;
   payload?: any;
-  groundingUrls?: Array<{title: string, uri: string}>;
+  groundingUrls?: Array<{ title: string, uri: string }>;
 }
 
 export type AIProvider = 'gemini' | 'openrouter';

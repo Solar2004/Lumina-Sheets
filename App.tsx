@@ -49,6 +49,19 @@ const getRandomName = () => {
   return names[Math.floor(Math.random() * names.length)];
 };
 
+// Helper to generate random room code
+const generateRoomCode = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude confusing characters
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
+
+// Maximum users per room
+const MAX_USERS = 10;
+
 // Helper to download chart as PNG
 const downloadChartAsPng = (chartId: string, title: string) => {
   const svgElement = document.querySelector(`#${chartId} .recharts-wrapper svg`) as SVGSVGElement;
@@ -95,6 +108,70 @@ const downloadChartAsPng = (chartId: string, title: string) => {
     }
   };
   img.src = url;
+};
+
+// Component: Cursor Overlay (Shows other users' cursors)
+const CursorOverlay: React.FC<{ collaborators: Collaborator[] }> = ({ collaborators }) => {
+  return (
+    <div className="fixed inset-0 pointer-events-none z-50">
+      {collaborators.map(collab => collab.cursor && (
+        <div
+          key={collab.clientId}
+          style={{
+            position: 'absolute',
+            left: collab.cursor.x,
+            top: collab.cursor.y,
+            transform: 'translate(-4px, -4px)',
+            transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+        >
+          {/* Modern Cursor Icon */}
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Shadow */}
+            <g filter="url(#shadow)">
+              {/* Main cursor shape with gradient */}
+              <path
+                d="M5 3L5 21L9.5 16.5L12 24L15 23L12.5 15.5L19 15.5L5 3Z"
+                fill={collab.color}
+                stroke="white"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+            </g>
+            {/* Subtle highlight */}
+            <path
+              d="M7 5L7 17L10 14L11.5 19L13 18.5L11.5 13.5L16 13.5L7 5Z"
+              fill="white"
+              opacity="0.3"
+            />
+            <defs>
+              <filter id="shadow" x="0" y="0" width="28" height="32" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+                <feFlood floodOpacity="0" result="BackgroundImageFix" />
+                <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha" />
+                <feOffset dy="2" />
+                <feGaussianBlur stdDeviation="2" />
+                <feComposite in2="hardAlpha" operator="out" />
+                <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.25 0" />
+                <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow" />
+                <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow" result="shape" />
+              </filter>
+            </defs>
+          </svg>
+          {/* User label with improved styling */}
+          <div
+            className="absolute top-6 left-6 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap shadow-lg backdrop-blur-sm"
+            style={{
+              backgroundColor: collab.color,
+              color: 'white',
+              border: '1px solid rgba(255, 255, 255, 0.3)'
+            }}
+          >
+            {collab.name}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 };
 
 // Reusable components for layout
@@ -308,6 +385,7 @@ function App() {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connected'>('disconnected');
   const [roomName, setRoomName] = useState('');
+  const [roomFull, setRoomFull] = useState(false);
 
   // --- App State (Synced via Yjs) ---
   const [data, setData] = useState<RowData[]>([]);
@@ -356,8 +434,16 @@ function App() {
     console.log('🌍 [ENV] DEV:', import.meta.env.DEV);
     console.log('🌍 [ENV] PROD:', import.meta.env.PROD);
 
+    // Generate room code if not provided
     const params = new URLSearchParams(window.location.search);
-    const room = params.get('room') || 'lumina-main-room'; // Default room
+    let room = params.get('room');
+    if (!room) {
+      room = generateRoomCode();
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set('room', room);
+      window.history.pushState({}, '', newUrl.toString());
+      console.log('🎲 [ROOM] Generated new room:', room);
+    }
     setRoomName(room);
     console.log('🏠 [ROOM] Room Name:', room);
 
@@ -365,6 +451,7 @@ function App() {
       console.log('🔌 [WEBRTC] Creating WebrtcProvider...');
 
       // CRITICAL: Monkey-patch window.WebSocket - y-webrtc ignores WebSocketPolyfill!
+      // This patch MUST remain active for the entire session to prevent reconnection auth failures
       const OriginalWebSocket = window.WebSocket;
 
       (window as any).WebSocket = class extends OriginalWebSocket {
@@ -403,11 +490,7 @@ function App() {
         }
       });
 
-      // Restore after 5s
-      setTimeout(() => {
-        console.log('🔧 [PATCH] Restoring WebSocket');
-        (window as any).WebSocket = OriginalWebSocket;
-      }, 5000);
+      // DO NOT RESTORE WebSocket - keep the patch active to prevent reconnection failures!
 
       console.log('✅ [WEBRTC] WebrtcProvider created successfully');
       console.log('📊 [WEBRTC] Provider details:', {
@@ -503,18 +586,33 @@ function App() {
       newProvider.awareness.on('change', () => {
         const states = newProvider.awareness.getStates();
         const activeUsers: Collaborator[] = [];
+        let totalUsers = 0;
+
         states.forEach((state: any, clientId: number) => {
-          if (state.user && clientId !== doc.clientID) {
-            activeUsers.push({
-              clientId,
-              name: state.user.name,
-              color: state.user.color,
-              selection: state.selection
-            });
+          if (state.user) {
+            totalUsers++;
+            if (clientId !== doc.clientID) {
+              activeUsers.push({
+                clientId,
+                name: state.user.name,
+                color: state.user.color,
+                selection: state.selection,
+                cursor: state.cursor
+              });
+            }
           }
         });
+
         setCollaborators(activeUsers);
         console.log('👥 [PRESENCE] Active collaborators:', activeUsers.length, activeUsers.map(u => u.name));
+        console.log('📊 [USERS] Total users in room:', totalUsers);
+
+        // Check room capacity
+        if (totalUsers > MAX_USERS) {
+          console.error('🚫 [LIMIT] Room is full! Disconnecting...');
+          setRoomFull(true);
+          newProvider.disconnect();
+        }
       });
 
       console.log('✅ [LUMINA] Initialization complete!');
@@ -532,6 +630,33 @@ function App() {
       setConnectionStatus('disconnected');
     }
   }, []);
+
+  // Mouse tracking for cursor sharing
+  useEffect(() => {
+    if (!provider) return;
+
+    let lastUpdate = 0;
+    const THROTTLE_MS = 50; // Update cursor every 50ms max
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastUpdate < THROTTLE_MS) return;
+
+      lastUpdate = now;
+      provider.awareness.setLocalStateField('cursor', {
+        x: e.clientX,
+        y: e.clientY
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      // Clear cursor when leaving
+      provider.awareness.setLocalStateField('cursor', null);
+    };
+  }, [provider]);
 
   // Scroll Chat
   useEffect(() => {
@@ -820,8 +945,44 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-[#1e1f20] text-gray-200 font-sans overflow-hidden selection:bg-blue-500/30">
 
+      {/* Cursor Overlay */}
+      <CursorOverlay collaborators={collaborators} />
+
+      {/* Modals */}
       {expandedGalleryItem && <GalleryModal item={expandedGalleryItem} data={data} onClose={() => setExpandedGalleryItem(null)} onDelete={deleteGalleryItem} />}
       {showSettings && <SettingsModal config={aiConfig} onSave={setAiConfig} onClose={() => setShowSettings(false)} />}
+
+      {/* Room Full Modal */}
+      {roomFull && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#202124] border-2 border-red-500/50 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 bg-gradient-to-br from-red-900/30 to-[#202124]">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-red-500/20 rounded-full">
+                  <AlertTriangle size={32} className="text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Room is Full</h2>
+                  <p className="text-sm text-gray-400">Maximum capacity reached</p>
+                </div>
+              </div>
+              <p className="text-gray-300 mb-6">
+                This room has reached its maximum capacity of <strong className="text-red-400">{MAX_USERS} users</strong>.
+                Please try creating a new room or wait for someone to leave.
+              </p>
+              <Button
+                variant="primary"
+                className="w-full"
+                onClick={() => {
+                  window.location.href = window.location.pathname; // Reload to generate new room
+                }}
+              >
+                Create New Room
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-3 bg-[#202124] border-b border-gray-700 shadow-md z-30 relative shrink-0">
@@ -864,21 +1025,31 @@ function App() {
           </div>
 
           {/* Collaborators */}
-          <div className="flex items-center -space-x-2 ml-2">
-            <div className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: localUser.color }} title={`You: ${localUser.name}`}>
-              {localUser.name.charAt(0)}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center -space-x-2">
+              <div className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: localUser.color }} title={`You: ${localUser.name}`}>
+                {localUser.name.charAt(0)}
+              </div>
+              {collaborators.slice(0, 3).map(c => (
+                <div key={c.clientId} className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white relative group" style={{ backgroundColor: c.color }}>
+                  {c.name.charAt(0)}
+                  <div className="absolute bottom-full mb-1 hidden group-hover:block bg-black text-white text-[10px] px-1 rounded whitespace-nowrap">{c.name}</div>
+                </div>
+              ))}
+              {collaborators.length > 3 && (
+                <div className="w-8 h-8 rounded-full border-2 border-[#202124] bg-gray-600 flex items-center justify-center text-[10px] text-white">
+                  +{collaborators.length - 3}
+                </div>
+              )}
             </div>
-            {collaborators.slice(0, 3).map(c => (
-              <div key={c.clientId} className="w-8 h-8 rounded-full border-2 border-[#202124] flex items-center justify-center text-xs font-bold text-white relative group" style={{ backgroundColor: c.color }}>
-                {c.name.charAt(0)}
-                <div className="absolute bottom-full mb-1 hidden group-hover:block bg-black text-white text-[10px] px-1 rounded whitespace-nowrap">{c.name}</div>
-              </div>
-            ))}
-            {collaborators.length > 3 && (
-              <div className="w-8 h-8 rounded-full border-2 border-[#202124] bg-gray-600 flex items-center justify-center text-[10px] text-white">
-                +{collaborators.length - 3}
-              </div>
-            )}
+            {/* User count indicator */}
+            <div className={`text-[10px] font-mono px-2 py-1 rounded ${(collaborators.length + 1) >= MAX_USERS
+              ? 'bg-red-900/30 text-red-400 border border-red-900/50'
+              : 'bg-gray-800/50 text-gray-400 border border-gray-700/50'
+              }`}>
+              <Users size={10} className="inline mr-1" />
+              {collaborators.length + 1}/{MAX_USERS}
+            </div>
           </div>
         </div>
 
